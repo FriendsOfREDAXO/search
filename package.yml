@@ -1,0 +1,20 @@
+package: search
+version: '0.1.0'
+author: Friends Of REDAXO
+supportpage: https://github.com/FriendsOfRedaxo/search/issues
+
+page:
+    title: 'translate:search_title'
+    perm: admin[]
+    pjax: false
+    icon: rex-icon fa-search
+    subpages:
+        sources: { title: 'translate:search_sources' }
+        search: { title: 'translate:search_search' }
+
+requires:
+    php: '>=8.1'
+    redaxo: ^5.17.0
+
+console_commands:
+    search:index: rex_search_command_index

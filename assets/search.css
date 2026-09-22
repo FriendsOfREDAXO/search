@@ -1,0 +1,4 @@
+/* Aktionsmenue in der Quellenliste: gleiche Schriftgroesse wie die YForm-Datenansicht (.yform-dropdown .btn) */
+.search-dropdown .btn {
+    font-size: inherit;
+}
