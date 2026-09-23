@@ -13,7 +13,6 @@ use rex_addon;
 use rex_article;
 use rex_category;
 use rex_clang;
-use rex_extension_point;
 use rex_i18n;
 use rex_sql;
 use rex_yrewrite;
@@ -109,25 +108,6 @@ abstract class AbstractArticleSourceType extends SourceType
         return array_map(static fn (array $row): string => $row['id'] . '-' . $row['clang_id'], $rows);
     }
 
-    public function getExtensionPoints(): array
-    {
-        return ['ART_ADDED', 'ART_UPDATED', 'ART_DELETED', 'ART_STATUS', 'ART_META_UPDATED', 'SLICE_ADDED', 'SLICE_UPDATED', 'SLICE_DELETED'];
-    }
-
-    public function resolveItemIds(rex_extension_point $ep, Source $source): array
-    {
-        $articleId = $ep->getParam('id') ?? $ep->getParam('article_id');
-        if (null === $articleId) {
-            return [];
-        }
-        $articleId = (int) $articleId;
-
-        $clangId = $ep->getParam('clang') ?? $ep->getParam('clang_id');
-        $clangIds = null === $clangId ? $this->getClangIds($source) : [(int) $clangId];
-
-        return array_map(static fn (int $clang): string => $articleId . '-' . $clang, $clangIds);
-    }
-
     /**
      * Loest eine Datensatz-ID in den Artikel auf, wenn er in den Filter der Quelle faellt.
      */
@@ -209,7 +189,9 @@ abstract class AbstractArticleSourceType extends SourceType
 
     private function matches(Source $source, rex_article $article): bool
     {
-        if (!$source->getConfig('include_offline', false) && !$article->isOnline()) {
+        // Ein Artikel unter einer offline geschalteten Kategorie ist im Frontend nicht
+        // erreichbar und gehoert deshalb nicht in den Index.
+        if (!$source->getConfig('include_offline', false) && !$article->isOnlineIncludingParents()) {
             return false;
         }
 

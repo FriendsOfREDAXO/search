@@ -67,8 +67,10 @@ final class Indexer
     }
 
     /**
-     * Aktualisiert einen einzelnen Datensatz, etwa nach einem Extension Point.
-     * Liefert der Typ keine Dokumente mehr, werden die alten entfernt.
+     * Aktualisiert einen einzelnen Datensatz. Wird vom AddOn selbst nicht aufgerufen, der
+     * Index wird immer vollstaendig neu aufgebaut; gedacht fuer fremden Code, der eine
+     * gezielte Aktualisierung braucht. Liefert der Typ keine Dokumente mehr, werden die
+     * alten entfernt.
      */
     public function reindexItem(Source $source, string $itemId): int
     {
