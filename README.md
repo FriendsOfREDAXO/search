@@ -29,19 +29,25 @@ braucht, legt mehrere Quellen an; die Quellenliste zeigt Namespace, Typ und Must
 - **Artikel-Metadaten** (`article` / `meta`, `{article_id}-{clang_id}-meta`): wie oben, dazu die
   Auswahl der Felder aus Artikelname und den aktuell definierten Metainfo-Feldern `art_*`.
 
-Beide Artikel-Typen teilen sich den Namespace `article` und reagieren auf die `ART_*`- und
-`SLICE_*`-Extension-Points. Ein Quellentyp kann `getNamespace()` überschreiben, um sich einen
+Beide Artikel-Typen teilen sich den Namespace `article`. Ein Artikel unter einer offline
+geschalteten Kategorie gilt als nicht erreichbar und fällt beim nächsten Aufbau aus dem Index. Ein Quellentyp kann `getNamespace()` überschreiben, um sich einen
 Namespace mit anderen Typen zu teilen; unterschieden wird dann über `getType()`.
 
 ## Index aufbauen
 
-- Backend: *Suche → Quellen*, Button *Neu indizieren* je Quelle oder *Alle aktiven Quellen neu indizieren*
+Der Index wird **nicht** laufend fortgeschrieben. Änderungen an Artikeln oder YForm-Datensätzen
+lösen keinen Neuaufbau aus; das hielte bei großen Beständen den Request auf. Stattdessen:
+
+- Backend: *Suche → Quellen*, Aktion *Neu indizieren* je Quelle oder *Alle aktiven Quellen neu indizieren*
 - Konsole: `bin/console search:index`, `--source=<id>` für eine Quelle, `--all` auch für inaktive
-- Einzelaktualisierung: automatisch über die Extension Points der Quellentypen
+- Cronjob: Typ *Suche: Index neu aufbauen*, mit Auswahl der Quellen. Ohne Auswahl laufen alle
+  aktiven Quellen, inaktive werden übersprungen. Setzt das AddOn `cronjob` voraus.
+
+Ein Komplettaufbau entfernt am Ende alle Dokumente der Quelle, die der Lauf nicht angefasst hat.
+So verschwinden gelöschte Datensätze ohne eigene Buchführung. Unveränderte Dokumente mit
+gleichem Inhalts-Hash werden nicht neu geschrieben.
 
 Wird die Konfiguration einer Quelle geändert, wird ihr Index gelöscht und sofort neu aufgebaut.
-Ein Komplettaufbau entfernt am Ende alle Dokumente der Quelle, die der Lauf nicht angefasst hat.
-Unveränderte Dokumente (gleicher Inhalts-Hash) werden nicht neu geschrieben.
 
 ## Eigenen Quellentyp bereitstellen
 
@@ -56,7 +62,6 @@ rex_extension::register('SEARCH_SOURCE_TYPES', static function (rex_extension_po
 
 Die Klasse erbt von `SourceType` und implementiert mindestens `getKey()`, `getLabel()`,
 `getConfigFields()`, `getType()`, `getIndexIdPattern()`, `countItems()`, `getItemIds()` und `createDocuments()`.
-Für die Einzelaktualisierung zusätzlich `getExtensionPoints()` und `resolveItemIds()`.
 `lib/FriendsOfRedaxo/Search/Source/Type/YFormTableSourceType.php` ist die Referenzimplementierung.
 
 ## Suchen

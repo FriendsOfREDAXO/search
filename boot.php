@@ -1,7 +1,6 @@
 <?php
 
-use FriendsOfRedaxo\Search\Index\IncrementalUpdater;
-use FriendsOfRedaxo\Search\Source\SourceTypeRegistry;
+use FriendsOfRedaxo\Search\Cronjob\ReindexCronjob;
 
 $addon = rex_addon::get('search');
 
@@ -14,15 +13,8 @@ if (rex::isBackend() && 'search' === rex_be_controller::getCurrentPagePart(1)) {
     }
 }
 
-// Einzelaktualisierung: Jeder Quellentyp nennt die Extension Points, auf die er reagiert.
-// Die Registry wird erst nach PACKAGES_INCLUDED befragt, damit fremde AddOns ihre Typen
-// unabhaengig von der Boot-Reihenfolge anmelden koennen.
-rex_extension::register('PACKAGES_INCLUDED', static function () {
-    foreach (SourceTypeRegistry::all() as $type) {
-        foreach ($type->getExtensionPoints() as $extensionPoint) {
-            rex_extension::register($extensionPoint, static function (rex_extension_point $ep) use ($type): void {
-                IncrementalUpdater::handle($ep, $type);
-            }, rex_extension::LATE);
-        }
-    }
-});
+// Der Index wird bewusst nicht durch Extension Points fortgeschrieben. Ein Neuaufbau
+// laeuft ueber die Quellenliste, den Konsolenbefehl search:index oder diesen Cronjob.
+if (rex_addon::get('cronjob')->isAvailable()) {
+    rex_cronjob_manager::registerType(ReindexCronjob::class);
+}

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Source;
 
 use FriendsOfRedaxo\Search\Document\IndexDocument;
-use rex_extension_point;
 
 use function array_key_exists;
 
@@ -112,27 +111,6 @@ abstract class SourceType
      * @return iterable<IndexDocument>
      */
     abstract public function createDocuments(Source $source, string $itemId): iterable;
-
-    /**
-     * Extension Points, bei denen Datensaetze dieses Typs einzeln aktualisiert werden sollen.
-     *
-     * @return list<string>
-     */
-    public function getExtensionPoints(): array
-    {
-        return [];
-    }
-
-    /**
-     * Ermittelt aus einem Extension Point die betroffenen Datensatz-IDs der Quelle.
-     * Leere Liste, wenn der Aufruf die Quelle nicht betrifft.
-     *
-     * @return list<string>
-     */
-    public function resolveItemIds(rex_extension_point $ep, Source $source): array
-    {
-        return [];
-    }
 
     /**
      * Normalisiert eingehende Formularwerte anhand der Felddefinitionen.

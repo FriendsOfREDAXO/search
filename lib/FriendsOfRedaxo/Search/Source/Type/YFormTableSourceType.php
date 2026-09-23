@@ -12,7 +12,6 @@ use FriendsOfRedaxo\Search\Source\SourceType;
 use FriendsOfRedaxo\Search\Text;
 use rex;
 use rex_addon;
-use rex_extension_point;
 use rex_i18n;
 use rex_sql;
 use rex_yform_manager_table;
@@ -179,23 +178,6 @@ final class YFormTableSourceType extends SourceType
                 ['table' => $table->getTableName()],
             ),
         ];
-    }
-
-    public function getExtensionPoints(): array
-    {
-        return ['YFORM_DATA_ADDED', 'YFORM_DATA_UPDATED', 'YFORM_DATA_DELETED'];
-    }
-
-    public function resolveItemIds(rex_extension_point $ep, Source $source): array
-    {
-        $table = $ep->getParam('table');
-        if (!$table instanceof rex_yform_manager_table || $table->getTableName() !== $source->getConfig('table')) {
-            return [];
-        }
-
-        $dataId = $ep->getParam('data_id');
-
-        return null === $dataId ? [] : [(string) $dataId];
     }
 
     private function getTable(string $tableName): ?rex_yform_manager_table
