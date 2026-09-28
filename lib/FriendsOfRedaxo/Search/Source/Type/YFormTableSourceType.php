@@ -154,8 +154,10 @@ final class YFormTableSourceType extends SourceType
         $row = $rows[0];
 
         $parts = [];
+        $rawParts = [];
         foreach ($this->getContentFieldNames($source, $table) as $fieldName) {
             $parts[$fieldName] = Text::fromHtml((string) ($row[$fieldName] ?? ''));
+            $rawParts[$fieldName] = (string) ($row[$fieldName] ?? '');
         }
 
         $titleField = (string) $source->getConfig('title_field', '');
@@ -176,6 +178,8 @@ final class YFormTableSourceType extends SourceType
                 $this->readUpdatedAt($row),
                 null,
                 ['table' => $table->getTableName()],
+                Text::join($rawParts),
+                IndexDocument::FORMAT_TEXT,
             ),
         ];
     }

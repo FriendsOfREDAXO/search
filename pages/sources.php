@@ -1,8 +1,9 @@
 <?php
 
+use FriendsOfRedaxo\Search\Backend\ConfigFormRenderer;
 use FriendsOfRedaxo\Search\Index\Indexer;
+use FriendsOfRedaxo\Search\Index\IndexFilterRegistry;
 use FriendsOfRedaxo\Search\Index\IndexRepository;
-use FriendsOfRedaxo\Search\Source\ConfigField;
 use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
 use FriendsOfRedaxo\Search\Source\SourceTypeRegistry;
@@ -21,7 +22,7 @@ if ('saved' === $msg) {
 } elseif ('deleted' === $msg) {
     echo rex_view::success($addon->i18n('source_deleted'));
 } elseif ('saved_reindexed' === $msg) {
-    echo rex_view::success($addon->i18n('source_saved_reindexed', rex_request('items', 'int'), rex_request('written', 'int')));
+    echo rex_view::success($addon->i18n('source_saved_reindexed', rex_request('items', 'int'), rex_request('written', 'int'), rex_request('skipped', 'int')));
 } elseif ('saved_cleared' === $msg) {
     echo rex_view::success($addon->i18n('source_saved_cleared'));
 } elseif ('reindexed' === $msg) {
@@ -129,6 +130,7 @@ if ('add' === $func || 'edit' === $func) {
             'name' => $source?->name ?? '',
             'status' => $source?->status ?? true,
             'config' => $source?->config ?? [],
+            'filters' => $source?->filters ?? [],
         ];
         if ([] === $data['config']) {
             foreach ($type->getConfigFields([]) as $field) {
@@ -150,6 +152,19 @@ if ('add' === $func || 'edit' === $func) {
             $data['name'] = trim(rex_post('name', 'string'));
             $data['status'] = rex_post('status', 'bool');
             $data['config'] = $type->normalizeConfig(rex_post('config', 'array', []));
+            $rawFilterConfig = rex_post('filter_config', 'array', []);
+            $data['filters'] = [];
+            foreach (rex_post('filters', 'array', []) as $filterKey) {
+                if (!is_string($filterKey)) {
+                    continue;
+                }
+                $filter = IndexFilterRegistry::all()[$filterKey] ?? null;
+                if (null === $filter) {
+                    continue;
+                }
+                $raw = $rawFilterConfig[$filterKey] ?? [];
+                $data['filters'][$filterKey] = $filter->normalizeConfig(is_array($raw) ? $raw : []);
+            }
         }
 
         if ($isSave) {
@@ -167,11 +182,14 @@ if ('add' === $func || 'edit' === $func) {
 
             if ([] === $errors) {
                 $saved = $source ?? new Source(null, '', $typeKey);
-                // Eine geaenderte Konfiguration macht den bestehenden Index der Quelle ungueltig
-                $configChanged = null === $source || $source->config !== $data['config'];
+                // Geaenderte Konfiguration oder Filter machen den bestehenden Index ungueltig
+                $configChanged = null === $source
+                    || $source->config !== $data['config']
+                    || $source->filters !== $data['filters'];
                 $saved->name = $data['name'];
                 $saved->status = $data['status'];
                 $saved->config = $data['config'];
+                $saved->filters = $data['filters'];
                 $repository->save($saved);
 
                 if (!$configChanged) {
@@ -190,6 +208,7 @@ if ('add' === $func || 'edit' === $func) {
                         'msg' => 'saved_reindexed',
                         'items' => $result->items,
                         'written' => $result->documentsWritten,
+                        'skipped' => $result->skipped,
                     ], false));
                 } catch (Throwable $exception) {
                     echo rex_view::error(rex_escape($exception->getMessage()));
@@ -220,62 +239,69 @@ if ('add' === $func || 'edit' === $func) {
         $fragment->setVar('elements', $elements, false);
         $body = $fragment->parse('core/form/form.php');
 
-        $configElements = [];
-        foreach ($type->getConfigFields($data['config']) as $field) {
-            $value = $data['config'][$field->name] ?? $field->default;
-            $fieldId = 'search-config-' . $field->name;
-            $inputName = 'config[' . $field->name . ']';
-            $reload = $field->reloadOnChange ? ' data-search-reload="1"' : '';
-            $element = [
-                'label' => '<label for="' . $fieldId . '">' . rex_escape($field->label) . '</label>',
-                'note' => $field->notice,
-                'required' => $field->required,
-                'error' => $errors['config.' . $field->name] ?? '',
-            ];
-
-            switch ($field->type) {
-                case ConfigField::SELECT:
-                case ConfigField::MULTISELECT:
-                    $select = new rex_select();
-                    $select->setName($inputName . (ConfigField::MULTISELECT === $field->type ? '[]' : ''));
-                    $select->setId($fieldId);
-                    $select->setAttribute('class', 'form-control');
-                    if ($field->reloadOnChange) {
-                        $select->setAttribute('data-search-reload', '1');
-                    }
-                    if (ConfigField::MULTISELECT === $field->type) {
-                        $select->setMultiple(true);
-                        $select->setSize(min(10, max(3, count($field->options))));
-                    } elseif (!array_key_exists('', $field->options) && (!$field->required || '' === (string) $value)) {
-                        $select->addOption($field->required ? rex_i18n::msg('search_source_please_choose') : '–', '');
-                    }
-                    foreach ($field->options as $optionValue => $optionLabel) {
-                        $select->addOption($optionLabel, (string) $optionValue);
-                    }
-                    $select->setSelected(ConfigField::MULTISELECT === $field->type ? (array) $value : (string) $value);
-                    $element['field'] = $select->get();
-                    break;
-                case ConfigField::TEXTAREA:
-                    $element['field'] = '<textarea class="form-control" id="' . $fieldId . '" name="' . $inputName . '" rows="3"' . $reload . '>' . rex_escape((string) $value) . '</textarea>';
-                    break;
-                case ConfigField::CHECKBOX:
-                    $checkbox = new rex_fragment();
-                    $checkbox->setVar('elements', [[
-                        'label' => '<label for="' . $fieldId . '">' . rex_escape($field->label) . '</label>',
-                        'field' => '<input type="checkbox" id="' . $fieldId . '" name="' . $inputName . '" value="1"' . ($value ? ' checked' : '') . $reload . '>',
-                        'note' => $field->notice,
-                    ]], false);
-                    $element = ['field' => $checkbox->parse('core/form/checkbox.php'), 'error' => $errors['config.' . $field->name] ?? ''];
-                    break;
-                default:
-                    $element['field'] = '<input class="form-control" type="text" id="' . $fieldId . '" name="' . $inputName . '" value="' . rex_escape((string) $value) . '"' . $reload . '>';
+        $configErrors = [];
+        foreach ($errors as $key => $message) {
+            if (str_starts_with($key, 'config.')) {
+                $configErrors[substr($key, 7)] = $message;
             }
-            $configElements[] = $element;
         }
 
-        $fragment = new rex_fragment();
-        $fragment->setVar('elements', $configElements, false);
-        $body .= '<fieldset><legend>' . $addon->i18n('source_config') . '</legend>' . $fragment->parse('core/form/form.php') . '</fieldset>';
+        $body .= '<fieldset><legend>' . $addon->i18n('source_config') . '</legend>'
+            . ConfigFormRenderer::render($type->getConfigFields($data['config']), $data['config'], 'config', $configErrors)
+            . '</fieldset>';
+
+        // Indexfilter: welche Datensaetze beim Aufbau ueberhaupt aufgenommen werden
+        $probe = new Source($source?->id, $data['name'], $typeKey, $data['config'], $data['filters'], $data['status']);
+        $availableFilters = IndexFilterRegistry::available($probe);
+        if ([] !== $availableFilters) {
+            $filterSelect = new rex_select();
+            $filterSelect->setName('filters[]');
+            $filterSelect->setId('search-filters');
+            $filterSelect->setAttribute('class', 'form-control');
+            $filterSelect->setAttribute('data-search-reload', '1');
+            $filterSelect->setMultiple(true);
+            $filterSelect->setSize(min(8, max(3, count($availableFilters))));
+            $descriptions = [];
+            foreach ($availableFilters as $key => $filter) {
+                $filterSelect->addOption($filter->getLabel(), $key);
+                if ('' !== $filter->getDescription()) {
+                    $descriptions[] = '<strong>' . rex_escape($filter->getLabel()) . '</strong> – ' . rex_escape($filter->getDescription());
+                }
+            }
+            $filterSelect->setSelected(array_keys($data['filters']));
+
+            $fragment = new rex_fragment();
+            $fragment->setVar('elements', [[
+                'label' => '<label for="search-filters">' . $addon->i18n('source_filters') . '</label>',
+                'field' => $filterSelect->get(),
+                'note' => $addon->i18n('source_filters_notice')
+                    . ([] === $descriptions ? '' : '<br>' . implode('<br>', $descriptions)),
+            ]], false);
+            $body .= '<fieldset><legend>' . $addon->i18n('source_filters') . '</legend>' . $fragment->parse('core/form/form.php') . '</fieldset>';
+
+            // Einstellungen je gewaehltem Filter, erscheinen nach dem Aktualisieren des Formulars
+            foreach ($data['filters'] as $key => $filterConfig) {
+                $filter = $availableFilters[$key] ?? null;
+                if (null === $filter) {
+                    continue;
+                }
+                $fields = $filter->getConfigFields($filterConfig);
+                if ([] === $fields) {
+                    continue;
+                }
+
+                $filterErrors = [];
+                foreach ($errors as $errorKey => $message) {
+                    if (str_starts_with($errorKey, 'filter.' . $key . '.')) {
+                        $filterErrors[substr($errorKey, strlen('filter.' . $key . '.'))] = $message;
+                    }
+                }
+
+                $body .= '<fieldset><legend>' . rex_escape($filter->getLabel()) . '</legend>'
+                    . ConfigFormRenderer::render($fields, $filterConfig, 'filter_config[' . $key . ']', $filterErrors)
+                    . '</fieldset>';
+            }
+        }
 
         $fragment = new rex_fragment();
         $fragment->setVar('elements', [
@@ -375,6 +401,26 @@ $list->setColumnFormat('description', 'custom', static function (array $params) 
     $type = $source?->getType();
 
     return null === $source || null === $type ? '' : rex_escape($type->describe($source));
+});
+
+$list->addColumn('filters', '', 6);
+$list->setColumnLabel('filters', $addon->i18n('source_filters'));
+$list->setColumnFormat('filters', 'custom', static function (array $params) use ($addon, $sourcesById) {
+    /** @var rex_list $list */
+    $list = $params['list'];
+    $source = $sourcesById[(int) $list->getValue('id')] ?? null;
+    if (null === $source) {
+        return '';
+    }
+
+    $labels = [];
+    foreach (IndexFilterRegistry::forSource($source) as $filter) {
+        $labels[] = rex_escape($filter->getLabel());
+    }
+
+    return [] === $labels
+        ? '<span class="text-muted">' . $addon->i18n('source_filters_none') . '</span>'
+        : implode('<br>', $labels);
 });
 
 $list->setColumnLabel('status', $addon->i18n('source_status'));

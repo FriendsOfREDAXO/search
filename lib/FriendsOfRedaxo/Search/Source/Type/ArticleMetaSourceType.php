@@ -73,10 +73,12 @@ final class ArticleMetaSourceType extends AbstractArticleSourceType
         }
 
         $parts = [];
+        $rawParts = [];
         foreach ($this->getSelectedFields($source) as $field) {
             $value = $article->getValue($field);
             if (is_string($value) || is_int($value) || is_float($value)) {
                 $parts[$field] = Text::fromHtml((string) $value);
+                $rawParts[$field] = (string) $value;
             }
         }
 
@@ -90,6 +92,8 @@ final class ArticleMetaSourceType extends AbstractArticleSourceType
                 $this->readUpdatedAt($article),
                 $article->getClangId(),
                 $this->buildMeta($article) + ['fields' => array_keys($parts)],
+                Text::join($rawParts),
+                IndexDocument::FORMAT_TEXT,
             ),
         ];
     }

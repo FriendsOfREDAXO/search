@@ -14,7 +14,7 @@ im Backend unter *Suche → Quellen* angelegt werden.
 
 Im Index landen je Dokument `namespace` (Key des Typs), `type` (Unterart der Quelle, z. B. der
 Tabellenname), `item_id` (Datensatz), `index_id` (Datensatz plus Variante), `title`, `content`,
-`url`, `clang_id`, `meta`, `updated_at` und `indexed_at`. Ein Datensatz kann mehrere Dokumente
+`content_raw`, `content_raw_format`, `url`, `clang_id`, `meta`, `updated_at` und `indexed_at`. Ein Datensatz kann mehrere Dokumente
 liefern, Artikel etwa `{id}-{clang}-fullcontent` und `{id}-{clang}-meta`.
 
 ## Mitgelieferte Quellentypen
@@ -33,6 +33,28 @@ Beide Artikel-Typen teilen sich den Namespace `article`. Ein Artikel unter einer
 geschalteten Kategorie gilt als nicht erreichbar und fällt beim nächsten Aufbau aus dem Index. Ein Quellentyp kann `getNamespace()` überschreiben, um sich einen
 Namespace mit anderen Typen zu teilen; unterschieden wird dann über `getType()`.
 
+## Inhalt und Originalinhalt
+
+Jedes Dokument wird zweifach abgelegt.
+
+`content` ist Klartext: Skript- und Style-Blöcke entfernt, Block-Tags zu Zeilenumbrüchen,
+restliche Tags weg, Entities aufgelöst, Leerraum normalisiert. Nur diese Spalte liegt
+zusammen mit `title` im FULLTEXT-Index, die Suche arbeitet ausschließlich darauf.
+
+`content_raw` ist derselbe Inhalt vor der Umwandlung, also etwa das gerenderte HTML eines
+Artikels samt Überschriften, Listen und Tabellen. Die Spalte ist bewusst **nicht** Teil des
+Volltextindex, sonst wären Klassennamen und Link-Ziele durchsuchbar. Sie ist für die
+Weiterverarbeitung da, etwa zum Zerlegen an Überschriften für eine semantische Suche.
+
+`content_raw_format` sagt, worum es sich handelt: `html` oder `text`. Die Regel dafür: HTML
+nur dort, wo Markup zur Bauart gehört, also beim Inhalt eines Artikels. Feldwerte aus YForm
+oder aus Metainfos gelten als Klartext. Die umgekehrte Verwechslung wäre teurer, denn wer
+Klartext als Markup behandelt, verliert aus `5 < 10` den halben Satz.
+
+Ein Artikel wird dabei nur **einmal** gerendert; der Klartext entsteht aus demselben
+Ergebnis. Der Inhalts-Hash deckt beide Fassungen ab, eine Änderung nur an der Struktur wird
+also erkannt.
+
 ## Index aufbauen
 
 Der Index wird **nicht** laufend fortgeschrieben. Änderungen an Artikeln oder YForm-Datensätzen
@@ -48,6 +70,45 @@ So verschwinden gelöschte Datensätze ohne eigene Buchführung. Unveränderte D
 gleichem Inhalts-Hash werden nicht neu geschrieben.
 
 Wird die Konfiguration einer Quelle geändert, wird ihr Index gelöscht und sofort neu aufgebaut.
+
+## Filter: was in den Index kommt
+
+Ein Filter entscheidet beim Aufbau, ob ein Datensatz in den Index einer Quelle aufgenommen
+wird. Damit lassen sich aus demselben Bestand **mehrere Indizes** bauen, etwa einer für
+Gäste und einer für den Mitgliederbereich. Welche Quellen eine Suche später befragt,
+entscheidet die Suche.
+
+Gefiltert wird, bevor die Dokumente erzeugt werden. Ein abgelehnter Artikel wird also nicht
+gerendert und fällt beim nächsten Aufbau aus dem Index, weil ihn der Lauf nicht anfasst.
+
+Im Bearbeiten-Formular einer Quelle stehen die passenden Filter zur Auswahl. Ohne Auswahl
+wird alles aufgenommen, bei mehreren müssen alle zustimmen. Ein Filter kann eigene
+Einstellungen mitbringen; sie erscheinen als eigener Abschnitt, sobald er gewählt und das
+Formular aktualisiert ist. Jede Änderung an Auswahl oder Einstellungen löscht den Index der
+Quelle und baut ihn neu auf, wie jede andere Konfigurationsänderung.
+
+Das AddOn bringt selbst keine Filter mit. Bereitgestellt werden sie über den Extension Point
+`SEARCH_INDEX_FILTERS`:
+
+```php
+rex_extension::register('SEARCH_INDEX_FILTERS', static function (rex_extension_point $ep) {
+    $filters = $ep->getSubject();
+    $filters[] = new MyFilter();
+
+    return $filters;
+});
+```
+
+Die Klasse erbt von `IndexFilter` und implementiert `getKey()`, `getLabel()`, `appliesTo()`
+und `accepts()`. `appliesTo()` bestimmt, für welche Quellen der Filter zur Auswahl steht.
+`accepts()` bekommt die Quelle, die Datensatzkennung des Quellentyps und die Einstellungen
+des Filters an dieser Quelle. Eigene Einstellungen liefert `getConfigFields()`, dieselbe
+Feldbeschreibung wie bei einem Quellentyp.
+
+Ein vollständiges Beispiel liegt im Projekt-AddOn unter `lib/Project/Search/`. Es schränkt
+Artikelquellen auf die Inhalte ein, die für bestimmte YCom-Gruppen zugänglich sind:
+angemeldet oder nicht, und wenn angemeldet, in welchen Gruppen. Geprüft wird über YCom
+selbst, Vererbung über Kategorien und Gruppenrechte gelten damit ohne Zutun.
 
 ## Eigenen Quellentyp bereitstellen
 

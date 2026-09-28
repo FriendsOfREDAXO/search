@@ -16,8 +16,10 @@ use const JSON_UNESCAPED_UNICODE;
 
 /**
  * Schreibt und liest rex_search_index.
+ *
+ * Nicht final, damit Tests die Datenbankzugriffe durch ein Doppel ersetzen koennen.
  */
-final class IndexRepository
+class IndexRepository
 {
     public static function table(): string
     {
@@ -62,6 +64,8 @@ final class IndexRepository
         $sql->setValue('index_id', $document->indexId);
         $sql->setValue('title', mb_substr($document->title, 0, 255));
         $sql->setValue('content', $document->content);
+        $sql->setValue('content_raw', $document->rawContent);
+        $sql->setValue('content_raw_format', $document->rawFormat);
         $sql->setValue('url', mb_substr($document->url, 0, 1024));
         $sql->setValue('clang_id', $document->clangId);
         $sql->setValue('meta', json_encode($document->meta, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));

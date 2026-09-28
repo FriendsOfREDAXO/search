@@ -10,12 +10,19 @@ use rex;
 use rex_sql;
 
 use function is_array;
+use function is_int;
+use function is_string;
 
 use const JSON_THROW_ON_ERROR;
 use const JSON_UNESCAPED_SLASHES;
 use const JSON_UNESCAPED_UNICODE;
 
-final class SourceRepository
+/**
+ * Liest und schreibt die konfigurierten Quellen.
+ *
+ * Nicht final, damit Tests die Datenbankzugriffe durch ein Doppel ersetzen koennen.
+ */
+class SourceRepository
 {
     public static function table(): string
     {
@@ -58,6 +65,7 @@ final class SourceRepository
         $sql->setValue('name', $source->name);
         $sql->setValue('type_key', $source->typeKey);
         $sql->setValue('config', json_encode($source->config, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $sql->setValue('filters', json_encode((object) $source->filters, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         $sql->setValue('status', $source->status ? 1 : 0);
         $sql->addGlobalUpdateFields();
 
@@ -94,17 +102,45 @@ final class SourceRepository
     }
 
     /**
+     * Fruehere Staende haben die Filter als Liste von Schluesseln gespeichert, seit der
+     * Einfuehrung eigener Filtereinstellungen ist es eine Zuordnung Schluessel => Konfiguration.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private static function hydrateFilters(mixed $filters): array
+    {
+        if (!is_array($filters)) {
+            return [];
+        }
+
+        $result = [];
+        foreach ($filters as $key => $value) {
+            if (is_int($key) && is_string($value)) {
+                $result[$value] = [];
+                continue;
+            }
+            if (is_string($key)) {
+                $result[$key] = is_array($value) ? $value : [];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
      * @param array<string, mixed> $row
      */
     private function hydrate(array $row): Source
     {
         $config = json_decode((string) ($row['config'] ?? ''), true);
+        $filters = json_decode((string) ($row['filters'] ?? ''), true);
 
         return new Source(
             (int) $row['id'],
             (string) $row['name'],
             (string) $row['type_key'],
             is_array($config) ? $config : [],
+            self::hydrateFilters($filters),
             (bool) $row['status'],
             empty($row['last_indexed_at']) ? null : new DateTimeImmutable((string) $row['last_indexed_at']),
             (int) $row['item_count'],

@@ -6,8 +6,6 @@ namespace FriendsOfRedaxo\Search\Source;
 
 use FriendsOfRedaxo\Search\Document\IndexDocument;
 
-use function array_key_exists;
-
 /**
  * Vertrag fuer einen Quellentyp.
  *
@@ -22,6 +20,8 @@ use function array_key_exists;
  */
 abstract class SourceType
 {
+    use NormalizesConfig;
+
     /**
      * Stabiler Schluessel des Typs in der Registry, z. B. "article_meta".
      */
@@ -111,31 +111,4 @@ abstract class SourceType
      * @return iterable<IndexDocument>
      */
     abstract public function createDocuments(Source $source, string $itemId): iterable;
-
-    /**
-     * Normalisiert eingehende Formularwerte anhand der Felddefinitionen.
-     *
-     * @param array<string, mixed> $raw
-     * @return array<string, mixed>
-     */
-    public function normalizeConfig(array $raw): array
-    {
-        // Eine nicht angehakte Checkbox fehlt im Post; sie ist dann false, nicht ihr Default.
-        $valueOf = static fn (ConfigField $field): mixed => ConfigField::CHECKBOX === $field->type
-            ? ($raw[$field->name] ?? false)
-            : ($raw[$field->name] ?? $field->default);
-
-        $config = [];
-        foreach ($this->getConfigFields($raw) as $field) {
-            $config[$field->name] = $field->normalize($valueOf($field));
-        }
-        // Zweiter Durchlauf: Felder, die erst durch normalisierte Werte sichtbar werden.
-        foreach ($this->getConfigFields($config) as $field) {
-            if (!array_key_exists($field->name, $config)) {
-                $config[$field->name] = $field->normalize($valueOf($field));
-            }
-        }
-
-        return $config;
-    }
 }
