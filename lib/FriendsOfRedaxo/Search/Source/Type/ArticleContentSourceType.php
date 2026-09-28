@@ -68,28 +68,41 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
             return [];
         }
 
+        [$raw, $format] = $this->readRawContent($source, $article->getId(), $article->getClangId());
+
         return [
             new IndexDocument(
                 $itemId,
                 $itemId . '-' . $this->getType($source),
                 Text::truncate(Text::fromHtml($article->getName()), 255),
-                $this->readContent($source, $article->getId(), $article->getClangId()),
+                Text::fromHtml($raw),
                 $this->buildUrl($article),
                 $this->readUpdatedAt($article),
                 $article->getClangId(),
                 $this->buildMeta($article),
+                $raw,
+                $format,
             ),
         ];
     }
 
-    private function readContent(Source $source, int $articleId, int $clangId): string
+    /**
+     * Der Inhalt in seiner Originalform, dazu die Angabe, ob es Markup ist.
+     *
+     * Bewusst wird hier nur einmal gerendert: der Klartext fuer den Volltextindex wird aus
+     * demselben Ergebnis abgeleitet, ein zweiter Rendervorgang waere der teuerste Teil des
+     * Aufbaus.
+     *
+     * @return array{string, string}
+     */
+    private function readRawContent(Source $source, int $articleId, int $clangId): array
     {
         if (self::MODE_RENDERED === $source->getConfig('mode') && class_exists(rex_article_content::class)) {
             try {
                 $content = new rex_article_content($articleId, $clangId);
                 $html = $content->getArticle();
                 if ('' !== trim($html)) {
-                    return Text::fromHtml($html);
+                    return [$html, IndexDocument::FORMAT_HTML];
                 }
             } catch (Throwable) {
                 // Module mit Frontend-Annahmen scheitern im Backend/CLI, dann greifen die Slice-Werte.
@@ -109,13 +122,13 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
         $parts = [];
         foreach ($rows as $row) {
             foreach ($row as $value) {
-                if (!is_string($value) || '' === trim($value)) {
-                    continue;
+                if (is_string($value) && '' !== trim($value)) {
+                    $parts[] = $value;
                 }
-                $parts[] = Text::fromHtml($value);
             }
         }
 
-        return Text::join($parts);
+        // Slice-Werte koennen Markup enthalten, deshalb gelten sie als HTML.
+        return [Text::join($parts), IndexDocument::FORMAT_HTML];
     }
 }

@@ -18,8 +18,28 @@ use const JSON_THROW_ON_ERROR;
  */
 final class IndexDocument
 {
+    /** Der Originalinhalt ist Markup und darf nicht ungeprueft ausgegeben werden. */
+    public const FORMAT_HTML = 'html';
+
+    /** Der Originalinhalt ist Klartext; ein "<" darin ist ein Zeichen, kein Tag. */
+    public const FORMAT_TEXT = 'text';
+
+    /*
+     * Zur Wahl des Formats: HTML nur dort angeben, wo Markup zur Bauart gehoert, also beim
+     * Inhalt eines Artikels. Feldwerte aus YForm oder aus Metainfos gelten als Klartext.
+     * Die umgekehrte Verwechslung waere teurer: wer Klartext als Markup behandelt, verliert
+     * aus "5 < 10" den halben Satz, waehrend Markup als Klartext nur unschoen aussieht.
+     */
+
     /**
+     * $rawContent ist der Inhalt vor der Umwandlung in Klartext, also etwa das gerenderte
+     * HTML eines Artikels. Er liegt bewusst neben $content und ist nicht Teil des
+     * Volltextindex: die Suche arbeitet auf dem Klartext, die Weiterverarbeitung, etwa das
+     * Zerlegen fuer Embeddings, braucht dagegen die Struktur. $rawFormat sagt, ob es sich um
+     * Markup oder um Klartext handelt, siehe FORMAT_HTML und FORMAT_TEXT.
+     *
      * @param array<string, mixed> $meta
+     * @param self::FORMAT_*|null $rawFormat
      */
     public function __construct(
         public readonly string $itemId,
@@ -30,6 +50,8 @@ final class IndexDocument
         public readonly ?DateTimeImmutable $updatedAt = null,
         public readonly ?int $clangId = null,
         public readonly array $meta = [],
+        public readonly ?string $rawContent = null,
+        public readonly ?string $rawFormat = null,
     ) {}
 
     public function getContentHash(): string
@@ -40,6 +62,8 @@ final class IndexDocument
             $this->url,
             (string) $this->clangId,
             json_encode($this->meta, JSON_THROW_ON_ERROR),
+            (string) $this->rawContent,
+            (string) $this->rawFormat,
         ]));
     }
 }

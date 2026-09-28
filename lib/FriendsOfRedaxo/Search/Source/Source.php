@@ -14,13 +14,18 @@ use rex_i18n;
 final class Source
 {
     /**
+     * $filters ordnet jedem gesetzten Indexfilter seine Einstellungen zu, Schluessel ist der
+     * Filterschluessel, siehe FriendsOfRedaxo\Search\Index\IndexFilter.
+     *
      * @param array<string, mixed> $config
+     * @param array<string, array<string, mixed>> $filters
      */
     public function __construct(
         public ?int $id,
         public string $name,
         public string $typeKey,
         public array $config = [],
+        public array $filters = [],
         public bool $status = true,
         public ?DateTimeImmutable $lastIndexedAt = null,
         public int $itemCount = 0,

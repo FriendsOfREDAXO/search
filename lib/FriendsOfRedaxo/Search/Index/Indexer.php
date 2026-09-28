@@ -39,21 +39,30 @@ final class Indexer
         $startedAt = new DateTimeImmutable();
         $total = $type->countItems($source);
 
+        // Ein abgelehnter Datensatz wird nicht angefasst und faellt deshalb am Ende des Laufs
+        // zusammen mit den veralteten Dokumenten aus dem Index.
+        $filters = IndexFilterRegistry::forSource($source);
+
         $offset = 0;
         $items = 0;
         $written = 0;
+        $skipped = 0;
         while (true) {
             $itemIds = $type->getItemIds($source, $offset, self::CHUNK_SIZE);
             if ([] === $itemIds) {
                 break;
             }
             foreach ($itemIds as $itemId) {
+                if (!$this->accepted($source, $itemId, $filters)) {
+                    ++$skipped;
+                    continue;
+                }
                 $written += $this->indexItem($source, $type, $itemId, $startedAt, false);
                 ++$items;
             }
             $offset += count($itemIds);
             if (null !== $onProgress) {
-                $onProgress($items, $total);
+                $onProgress($items + $skipped, $total);
             }
             if (count($itemIds) < self::CHUNK_SIZE) {
                 break;
@@ -63,7 +72,23 @@ final class Indexer
         $deleted = $this->index->deleteStale($source->requireId(), $startedAt);
         $this->sources->updateStats($source->requireId(), $items, $startedAt);
 
-        return new IndexResult($items, $written, $deleted);
+        return new IndexResult($items, $written, $deleted, $skipped);
+    }
+
+    /**
+     * Alle gesetzten Filter muessen zustimmen.
+     *
+     * @param array<string, IndexFilter> $filters
+     */
+    private function accepted(Source $source, string $itemId, array $filters): bool
+    {
+        foreach ($filters as $key => $filter) {
+            if (!$filter->accepts($source, $itemId, $source->filters[$key] ?? [])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -74,6 +99,12 @@ final class Indexer
      */
     public function reindexItem(Source $source, string $itemId): int
     {
+        if (!$this->accepted($source, $itemId, IndexFilterRegistry::forSource($source))) {
+            $this->index->deleteByItem($source->requireId(), $itemId);
+
+            return 0;
+        }
+
         return $this->indexItem($source, $source->requireType(), $itemId, new DateTimeImmutable(), true);
     }
 

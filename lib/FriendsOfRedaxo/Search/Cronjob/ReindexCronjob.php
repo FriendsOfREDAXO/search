@@ -75,6 +75,7 @@ class ReindexCronjob extends rex_cronjob
                     $result->items,
                     $result->documentsWritten,
                     $result->documentsDeleted,
+                    $result->skipped,
                 );
             } catch (Throwable $exception) {
                 ++$failed;

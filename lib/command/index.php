@@ -54,7 +54,10 @@ final class rex_search_command_index extends rex_console_command
                 $result = $indexer->rebuild($source, static function (int $done, ?int $total) use ($io): void {
                     $io->writeln(sprintf('  %d%s', $done, null === $total ? '' : ' / ' . $total));
                 });
-                $io->writeln(sprintf('  %d Datensätze, %d Dokumente geschrieben, %d veraltete entfernt', $result->items, $result->documentsWritten, $result->documentsDeleted));
+                $io->writeln(sprintf(
+                    '  %d Datensätze, %d Dokumente geschrieben, %d veraltete entfernt, %d von Filtern übersprungen',
+                    $result->items, $result->documentsWritten, $result->documentsDeleted, $result->skipped,
+                ));
             } catch (Throwable $exception) {
                 ++$failed;
                 $io->error($exception->getMessage());
