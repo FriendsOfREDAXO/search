@@ -76,6 +76,20 @@ abstract class SourceType
     }
 
     /**
+     * Das Label eines Metainfo-Feldes, sofern es eines gibt.
+     *
+     * rex_i18n baut aus einem unbekannten Schluessel "[translate:name]" -- siehe
+     * getMsgFallback() im Kern. Als Auswahleintrag sieht das nach einem Fehler aus, also
+     * lieber nur den Feldnamen zeigen.
+     */
+    protected static function translateFieldLabel(string $title): string
+    {
+        $label = trim(rex_i18n::translate($title, false));
+
+        return preg_match('/^\[translate:.*\]$/', $label) ? '' : $label;
+    }
+
+    /**
      * Felder, die jede Quelle hat, unabhaengig vom Typ.
      *
      * @return list<ConfigField>

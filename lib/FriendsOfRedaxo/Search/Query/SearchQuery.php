@@ -27,6 +27,9 @@ final class SearchQuery
 {
     public const DEFAULT_LIMIT = 20;
 
+    /** Nur diese Spalten lassen sich als Facette auszaehlen. */
+    public const FACET_COLUMNS = ['namespace', 'type', 'source_id', 'clang_id'];
+
     /** Obergrenze fuer die Trefferliste, bevor die Seite herausgeschnitten wird. */
     public const DEFAULT_CANDIDATE_LIMIT = 2000;
 
@@ -35,6 +38,12 @@ final class SearchQuery
 
     /** Die exakte Wortform zaehlt zusaetzlich zum Wortanfang. 0 schaltet den Zuschlag ab. */
     public const DEFAULT_EXACT_BOOST = 0.5;
+
+    /** Woerter nahe beieinander zaehlen zusaetzlich. 0 schaltet den Zuschlag ab. */
+    public const DEFAULT_PROXIMITY_BOOST = 0.8;
+
+    /** Bis zu diesem Wortabstand gelten Woerter als nahe beieinander. */
+    public const DEFAULT_PROXIMITY_DISTANCE = 20;
 
     /**
      * Bis zu dieser Zeichenzahl wird ein Dokument gar nicht gedaempft, darueber hinaus
@@ -72,6 +81,15 @@ final class SearchQuery
     private float $titleBoost = self::DEFAULT_TITLE_BOOST;
 
     private float $exactBoost = self::DEFAULT_EXACT_BOOST;
+
+    private float $proximityBoost = self::DEFAULT_PROXIMITY_BOOST;
+
+    private int $proximityDistance = self::DEFAULT_PROXIMITY_DISTANCE;
+
+    private float $minRelevance = 0.0;
+
+    /** @var list<string> */
+    private array $facets = [];
 
     private int $lengthScale = self::DEFAULT_LENGTH_SCALE;
 
@@ -151,6 +169,27 @@ final class SearchQuery
     public function getExactBoost(): float
     {
         return $this->exactBoost;
+    }
+
+    public function getProximityBoost(): float
+    {
+        return $this->proximityBoost;
+    }
+
+    public function getProximityDistance(): int
+    {
+        return $this->proximityDistance;
+    }
+
+    public function getMinRelevance(): float
+    {
+        return $this->minRelevance;
+    }
+
+    /** @return list<string> */
+    public function getFacets(): array
+    {
+        return $this->facets;
     }
 
     public function getLengthScale(): int
@@ -288,6 +327,47 @@ final class SearchQuery
         return $clone;
     }
 
+    /**
+     * Zuschlag, wenn die gesuchten Woerter nahe beieinander stehen.
+     */
+    public function withProximityBoost(float $proximityBoost, ?int $distance = null): self
+    {
+        $clone = clone $this;
+        $clone->proximityBoost = max(0.0, $proximityBoost);
+        if (null !== $distance) {
+            $clone->proximityDistance = max(1, $distance);
+        }
+
+        return $clone;
+    }
+
+    /**
+     * Treffer unterhalb dieses Anteils der besten Bewertung weglassen, 0 bis 1.
+     *
+     * Gemeint ist ein Anteil, kein absoluter Wert: die Bewertung haengt am Wortschatz des
+     * Bestands, "mindestens 4,5" waere auf jeder Installation etwas anderes. "mindestens
+     * dreissig Prozent des besten Treffers" ist dagegen ueberall dasselbe.
+     */
+    public function withMinRelevance(float $minRelevance): self
+    {
+        $clone = clone $this;
+        $clone->minRelevance = min(1.0, max(0.0, $minRelevance));
+
+        return $clone;
+    }
+
+    /**
+     * Spalten, fuer die das Ergebnis eine Haeufigkeitsverteilung mitliefern soll --
+     * "12 Artikel, 3 Dokumente". Erlaubt sind namespace, type, source_id und clang_id.
+     */
+    public function withFacets(string ...$facets): self
+    {
+        $clone = clone $this;
+        $clone->facets = array_values(array_intersect(self::FACET_COLUMNS, array_unique($facets)));
+
+        return $clone;
+    }
+
     public function withLengthScale(int $lengthScale): self
     {
         $clone = clone $this;
@@ -333,6 +413,10 @@ final class SearchQuery
         $this->correcting = $other->correcting;
         $this->titleBoost = $other->titleBoost;
         $this->exactBoost = $other->exactBoost;
+        $this->proximityBoost = $other->proximityBoost;
+        $this->proximityDistance = $other->proximityDistance;
+        $this->minRelevance = $other->minRelevance;
+        $this->facets = $other->facets;
         $this->lengthScale = $other->lengthScale;
         $this->sourceWeights = $other->sourceWeights;
         $this->candidateLimit = $other->candidateLimit;

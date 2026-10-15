@@ -48,6 +48,9 @@ final class OfficeExtractor extends DocumentExtractor
     private const MAX_SHEET_ROWS = 2000;
     private const MAX_SHEET_COLUMNS = 40;
 
+    /** @var array<string, int> Stil-Kuerzel auf Ueberschriftenebene, je Datei neu gelesen */
+    private array $headingStyles = [];
+
     public function getKey(): string
     {
         return 'office';
@@ -106,6 +109,8 @@ final class OfficeExtractor extends DocumentExtractor
             return null;
         }
 
+        $this->headingStyles = $this->docxHeadingStyles($zip);
+
         $body = $xpath->query('//w:body')->item(0);
         if (!$body instanceof DOMElement) {
             return null;
@@ -142,6 +147,67 @@ final class OfficeExtractor extends DocumentExtractor
         return $this->joinBlocks($blocks);
     }
 
+    /**
+     * Welche Absatzstile dieser Datei Ueberschriften sind, aus word/styles.xml.
+     *
+     * Das Stil-Kuerzel allein genuegt nicht. Word legt es in der Sprache der Oberflaeche
+     * an -- "Heading1", "berschrift1", "Titre1", "Titolo1", "Nagwek1" -- und bei einer
+     * Firmenvorlage heisst es womoeglich "Kapitelueberschrift". Der Name in styles.xml
+     * ist dagegen sprachunabhaengig "heading 1", und daneben steht oft die Gliederungs-
+     * ebene. Mit dem Kuerzel allein blieben italienische, spanische und polnische
+     * Dokumente ohne Gliederung, gemessen an erzeugten Testdateien.
+     *
+     * @return array<string, int> Stil-Kuerzel auf Ebene
+     */
+    private function docxHeadingStyles(ZipArchive $zip): array
+    {
+        $xpath = $this->xpath($zip, 'word/styles.xml', ['w' => self::NS_W]);
+        if (null === $xpath) {
+            return [];
+        }
+
+        $levels = [];
+        foreach ($xpath->query('//w:style[@w:type="paragraph"]') as $style) {
+            if (!$style instanceof DOMElement) {
+                continue;
+            }
+            $id = self::styleKey((string) $xpath->evaluate('string(./@w:styleId)', $style));
+            if ('' === $id) {
+                continue;
+            }
+
+            $level = 0;
+            $name = self::styleKey((string) $xpath->evaluate('string(./w:name/@w:val)', $style));
+            if (preg_match('/^heading([1-9])$/', $name, $match)) {
+                $level = (int) $match[1];
+            } elseif (in_array($name, ['title', 'subtitle'], true)) {
+                $level = 1;
+            }
+
+            if (0 === $level) {
+                $outline = (string) $xpath->evaluate('string(./w:pPr/w:outlineLvl/@w:val)', $style);
+                if ('' !== $outline && ctype_digit($outline)) {
+                    $level = (int) $outline + 1;
+                }
+            }
+
+            if ($level > 0) {
+                $levels[$id] = min(6, $level);
+            }
+        }
+
+        return $levels;
+    }
+
+    /**
+     * Vergleichsform eines Stilnamens: "Heading 1", "heading1" und "Heading-1" sind
+     * dasselbe.
+     */
+    private static function styleKey(string $value): string
+    {
+        return mb_strtolower(str_replace([' ', '-', '_'], '', $value));
+    }
+
     private function docxParagraph(DOMXPath $xpath, DOMElement $paragraph): ?string
     {
         $text = $this->textOf($xpath, $paragraph, './/w:t');
@@ -164,11 +230,17 @@ final class OfficeExtractor extends DocumentExtractor
 
     private function docxHeadingLevel(DOMXPath $xpath, DOMElement $paragraph): ?int
     {
-        $style = (string) $xpath->evaluate('string(.//w:pStyle/@w:val)', $paragraph);
-        if (preg_match('/^(?:Heading|berschrift|Titre|Kop)\s*(\d)$/i', $style, $match)) {
+        $style = self::styleKey((string) $xpath->evaluate('string(.//w:pStyle/@w:val)', $paragraph));
+        if (isset($this->headingStyles[$style])) {
+            return $this->headingStyles[$style];
+        }
+
+        // Ohne styles.xml -- oder bei einem Stil, der dort nicht steht -- bleibt das
+        // Kuerzel als Anhaltspunkt. Deckt die haeufigsten Sprachen ab.
+        if (preg_match('/^(?:heading|berschrift|titre|kop|titolo|ttulo|nagwek)([1-9])$/', $style, $match)) {
             return min(6, max(1, (int) $match[1]));
         }
-        if (in_array(mb_strtolower($style), ['title', 'titel'], true)) {
+        if (in_array($style, ['title', 'titel'], true)) {
             return 1;
         }
 

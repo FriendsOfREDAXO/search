@@ -71,4 +71,42 @@ final class rex_search_search_query_test extends TestCase
         self::assertSame(1, $query->getLimit());
         self::assertSame(0, $query->getOffset());
     }
+
+    public function testOnlyKnownColumnsAreAcceptedAsFacets(): void
+    {
+        $query = SearchQuery::create('burg')->withFacets('namespace', 'content', 'clang_id', 'drop table');
+
+        self::assertSame(['namespace', 'clang_id'], $query->getFacets());
+    }
+
+    public function testTheRelevanceThresholdStaysBetweenZeroAndOne(): void
+    {
+        self::assertSame(0.0, SearchQuery::create('burg')->withMinRelevance(-1.0)->getMinRelevance());
+        self::assertSame(1.0, SearchQuery::create('burg')->withMinRelevance(5.0)->getMinRelevance());
+        self::assertSame(0.3, SearchQuery::create('burg')->withMinRelevance(0.3)->getMinRelevance());
+    }
+
+    public function testProximityDistanceIsAtLeastOneAndKeptWhenOmitted(): void
+    {
+        $query = SearchQuery::create('burg')->withProximityBoost(1.0, 0);
+        self::assertSame(1, $query->getProximityDistance());
+
+        $other = $query->withProximityBoost(0.5);
+        self::assertSame(1, $other->getProximityDistance());
+        self::assertSame(0.5, $other->getProximityBoost());
+    }
+
+    public function testWithTermKeepsTheNewOptionsToo(): void
+    {
+        $query = SearchQuery::create('burg')
+            ->withFacets('namespace')
+            ->withMinRelevance(0.4)
+            ->withProximityBoost(0.2, 7);
+
+        $other = $query->withTerm('eppstein');
+
+        self::assertSame(['namespace'], $other->getFacets());
+        self::assertSame(0.4, $other->getMinRelevance());
+        self::assertSame(7, $other->getProximityDistance());
+    }
 }

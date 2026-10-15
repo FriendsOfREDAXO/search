@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace FriendsOfRedaxo\Search\Query;
 
+use function count;
+
 /**
  * Baut den SQL-Ausdruck, der einen Treffer bewertet.
  *
@@ -33,7 +35,8 @@ namespace FriendsOfRedaxo\Search\Query;
  *    Meta-Eintrag eines Artikels vor dessen Volltext -- beide haben dieselbe Bewertung,
  *    und der kuerzere wird weniger geteilt.
  *
- * Dazu optional ein Faktor je Quelle.
+ * Dazu ein Zuschlag, wenn die Woerter nahe beieinander stehen, und optional ein Faktor
+ * je Quelle.
  */
 final class ScoreExpression
 {
@@ -49,6 +52,7 @@ final class ScoreExpression
     {
         $score = 'LN(1 + ' . $this->match('title, content', 'term_content', $this->terms->expression) . ')';
         $score .= $this->exactBonus();
+        $score .= $this->proximityBonus();
         $score .= $this->titleBonus();
 
         return '(' . $score . ')' . $this->lengthDamping() . $this->sourceWeights();
@@ -76,6 +80,29 @@ final class ScoreExpression
         $this->params['exact_boost'] = $this->query->getExactBoost();
 
         return ' + :exact_boost * LN(1 + ' . $this->match('title, content', 'term_exact', $exact) . ')';
+    }
+
+    /**
+     * Zuschlag, wenn die gesuchten Woerter im Text nahe beieinander stehen.
+     *
+     * "Burg Eppstein" irgendwo im selben Dokument ist schwaecher als "Burg Eppstein" in
+     * einem Satz. InnoDB kann das selbst: eine Wortgruppe in Anfuehrungszeichen, gefolgt
+     * von @ und einem Abstand in Woertern. Am Bestand gemessen liefern beide Woerter
+     * irgendwo 12 Treffer, innerhalb von 50 Woertern 7, innerhalb von 5 noch 5.
+     *
+     * Nur bei mindestens zwei Woertern sinnvoll -- bei einem einzigen gibt es keinen
+     * Abstand, und die Wortgruppe waere dasselbe wie das Wort.
+     */
+    private function proximityBonus(): string
+    {
+        if (0.0 >= $this->query->getProximityBoost() || 2 > count($this->terms->words)) {
+            return '';
+        }
+
+        $phrase = '"' . implode(' ', $this->terms->words) . '" @' . $this->query->getProximityDistance();
+        $this->params['proximity_boost'] = $this->query->getProximityBoost();
+
+        return ' + :proximity_boost * LN(1 + ' . $this->match('title, content', 'term_proximity', $phrase) . ')';
     }
 
     private function titleBonus(): string

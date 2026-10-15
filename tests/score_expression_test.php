@@ -94,4 +94,35 @@ final class rex_search_score_expression_test extends TestCase
         self::assertStringStartsWith('(LN(1 + MATCH', $sql);
         self::assertStringContainsString('BOOLEAN MODE))) / (1 + LN(GREATEST(', $sql);
     }
+
+    public function testWordsCloseTogetherGetABonusViaAPhraseWithDistance(): void
+    {
+        $expression = $this->build(SearchQuery::create('burg eppstein'));
+        $params = $expression->getParams();
+
+        self::assertStringContainsString(':proximity_boost * LN(1 + MATCH (title, content) AGAINST (:term_proximity IN BOOLEAN MODE))', $expression->build());
+        self::assertSame('"burg eppstein" @20', $params['term_proximity']);
+    }
+
+    public function testASingleWordGetsNoProximityBonusBecauseThereIsNoDistance(): void
+    {
+        $expression = new ScoreExpression(SearchQuery::create('burg'), new SearchTerms(['burg']));
+
+        self::assertStringNotContainsString('term_proximity', $expression->build());
+    }
+
+    public function testProximityBoostOfZeroRemovesTheTermEntirely(): void
+    {
+        $expression = $this->build(SearchQuery::create('burg eppstein')->withProximityBoost(0.0));
+
+        self::assertStringNotContainsString('term_proximity', $expression->build());
+        self::assertArrayNotHasKey('proximity_boost', $expression->getParams());
+    }
+
+    public function testTheProximityDistanceIsConfigurable(): void
+    {
+        $expression = $this->build(SearchQuery::create('burg eppstein')->withProximityBoost(0.8, 5));
+
+        self::assertSame('"burg eppstein" @5', $expression->getParams()['term_proximity']);
+    }
 }

@@ -29,6 +29,7 @@ use const JSON_THROW_ON_ERROR;
  * um die es hier geht (ein paar zehntausend Zeilen), kostet das nichts.
  *
  * Die Bewertung steht in {@see ScoreExpression} und nirgends sonst.
+ * @phpstan-type Candidate array{id: int, namespace: string, item_id: string, type: string, source_id: int, clang_id: int, score: float}
  */
 final class Searcher
 {
@@ -173,22 +174,30 @@ final class Searcher
 
         $truncated = count($candidates) >= $query->getCandidateLimit();
         $ranked = $query->isGrouped() ? $this->groupByItem($candidates) : $candidates;
+
+        // Die Bewertung ist unbegrenzt und haengt am Wortschatz des Bestands; erst der
+        // Anteil am besten Treffer ist eine Zahl, die ueberall dasselbe bedeutet.
+        $best = $ranked[0]['score'] ?? 0.0;
+        $ranked = CandidateList::dropBelowMinRelevance($ranked, $best, $query->getMinRelevance());
+
+        $facets = CandidateList::countFacets($ranked, $query->getFacets());
         $page = array_slice($ranked, $query->getOffset(), $query->getLimit());
 
         return new SearchResult(
-            [] === $page ? [] : $this->loadHits($page, $terms),
+            [] === $page ? [] : $this->loadHits($page, $terms, $best),
             count($ranked),
             $query,
             $terms,
             $truncated,
             $corrections,
+            $facets,
         );
     }
 
     /**
      * Alle Treffer, aber nur Kennung, Gruppierungsschluessel und Bewertung.
      *
-     * @return list<array{id: int, namespace: string, item_id: string, score: float}>
+     * @return list<Candidate>
      */
     private function findCandidates(SearchQuery $query, SearchTerms $terms): array
     {
@@ -210,7 +219,7 @@ final class Searcher
         }
 
         $rows = rex_sql::factory()->getArray(
-            'SELECT id, namespace, item_id, ' . $score . ' AS score'
+            'SELECT id, namespace, item_id, type, source_id, clang_id, ' . $score . ' AS score'
             . ' FROM ' . self::table()
             . ' WHERE ' . implode(' AND ', $where)
             // Bei gleicher Bewertung gewinnt das inhaltsreichere Dokument: es liefert den
@@ -226,6 +235,9 @@ final class Searcher
                 'id' => (int) $row['id'],
                 'namespace' => (string) $row['namespace'],
                 'item_id' => (string) $row['item_id'],
+                'type' => (string) $row['type'],
+                'source_id' => (int) $row['source_id'],
+                'clang_id' => null === $row['clang_id'] ? 0 : (int) $row['clang_id'],
                 'score' => (float) $row['score'],
             ];
         }
@@ -241,8 +253,8 @@ final class Searcher
      * wird ueber namespace und item_id; die Sprache steckt bereits in der item_id, zwei
      * Sprachfassungen bleiben also getrennte Treffer.
      *
-     * @param list<array{id: int, namespace: string, item_id: string, score: float}> $candidates
-     * @return list<array{id: int, namespace: string, item_id: string, score: float}>
+     * @param list<Candidate> $candidates
+     * @return list<Candidate>
      */
     private function groupByItem(array $candidates): array
     {
@@ -266,10 +278,10 @@ final class Searcher
      * Fundstelle, SUBSTRING holt ein Fenster darum. Sonst muesste bei einem PDF ein halbes
      * Megabyte Text durch die Verbindung, nur um 200 Zeichen davon zu zeigen.
      *
-     * @param list<array{id: int, namespace: string, item_id: string, score: float}> $page
+     * @param list<Candidate> $page
      * @return list<SearchHit>
      */
-    private function loadHits(array $page, SearchTerms $terms): array
+    private function loadHits(array $page, SearchTerms $terms, float $best): array
     {
         $params = [];
         $ids = [];
@@ -304,7 +316,7 @@ final class Searcher
                 // Fehler, der Treffer faellt einfach weg.
                 continue;
             }
-            $hits[] = $this->toHit($row, $candidate['score'], $terms);
+            $hits[] = $this->toHit($row, $candidate['score'], $best, $terms);
         }
 
         return $hits;
@@ -338,7 +350,7 @@ final class Searcher
     /**
      * @param array<string, mixed> $row
      */
-    private function toHit(array $row, float $score, SearchTerms $terms): SearchHit
+    private function toHit(array $row, float $score, float $best, SearchTerms $terms): SearchHit
     {
         $window = (string) ($row['snippet_window'] ?? '');
         $cutAtStart = 1 < (int) ($row['snippet_start'] ?? 1);
@@ -353,6 +365,7 @@ final class Searcher
             (string) $row['url'],
             null === $row['clang_id'] ? null : (int) $row['clang_id'],
             $score,
+            CandidateList::relevance($score, $best),
             Snippet::fromWindow($window, $cutAtStart),
             $this->decodeMeta($row['meta'] ?? null),
             $this->toDate($row['updated_at'] ?? null),

@@ -134,4 +134,76 @@ final class rex_search_office_extractor_test extends TestCase
 
         return $file;
     }
+
+    /**
+     * Baut ein minimales docx mit einem benannten Absatzstil.
+     */
+    private function docxWithStyle(string $styleId, string $styleName): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'docx') . '.docx';
+        $w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+        $zip = new ZipArchive();
+        $zip->open($path, ZipArchive::CREATE);
+        $zip->addFromString('word/styles.xml',
+            '<?xml version="1.0"?><w:styles xmlns:w="' . $w . '">'
+            . '<w:style w:type="paragraph" w:styleId="' . $styleId . '"><w:name w:val="' . $styleName . '"/></w:style>'
+            . '</w:styles>');
+        $zip->addFromString('word/document.xml',
+            '<?xml version="1.0"?><w:document xmlns:w="' . $w . '"><w:body>'
+            . '<w:p><w:pPr><w:pStyle w:val="' . $styleId . '"/></w:pPr><w:r><w:t>Die Burgruine</w:t></w:r></w:p>'
+            . '</w:body></w:document>');
+        $zip->close();
+
+        return $path;
+    }
+
+    /**
+     * Das Stil-Kuerzel traegt die Sprache der Word-Oberflaeche, der Name in styles.xml
+     * nicht. Ohne styles.xml blieben italienische, spanische und polnische Dokumente
+     * ohne Gliederung.
+     */
+    public function testHeadingIsRecognisedWhateverTheStyleIdIsCalled(): void
+    {
+        $extractor = new OfficeExtractor();
+
+        foreach (['Heading1', 'berschrift1', 'Titre1', 'Titolo1', 'Nagwek1', 'Kapitelueberschrift'] as $styleId) {
+            $path = $this->docxWithStyle($styleId, 'heading 1');
+            $document = $extractor->extract($path, new ExtractionContext('probe.docx'));
+            unlink($path);
+
+            self::assertNotNull($document, $styleId);
+            self::assertStringContainsString('# Die Burgruine', $document->markdown, $styleId);
+        }
+    }
+
+    public function testOutlineLevelInTheStyleCountsWhenTheNameSaysNothing(): void
+    {
+        $path = $this->docxWithStyle('Eigen', 'irgendwas');
+        $zip = new ZipArchive();
+        $zip->open($path);
+        $w = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+        $zip->addFromString('word/styles.xml',
+            '<?xml version="1.0"?><w:styles xmlns:w="' . $w . '">'
+            . '<w:style w:type="paragraph" w:styleId="Eigen"><w:name w:val="irgendwas"/>'
+            . '<w:pPr><w:outlineLvl w:val="1"/></w:pPr></w:style></w:styles>');
+        $zip->close();
+
+        $document = (new OfficeExtractor())->extract($path, new ExtractionContext('probe.docx'));
+        unlink($path);
+
+        self::assertNotNull($document);
+        self::assertStringContainsString('## Die Burgruine', $document->markdown);
+    }
+
+    public function testAnOrdinaryStyleStaysOrdinaryText(): void
+    {
+        $path = $this->docxWithStyle('Standard', 'Normal');
+        $document = (new OfficeExtractor())->extract($path, new ExtractionContext('probe.docx'));
+        unlink($path);
+
+        self::assertNotNull($document);
+        self::assertStringNotContainsString('#', $document->markdown);
+        self::assertStringContainsString('Die Burgruine', $document->markdown);
+    }
 }

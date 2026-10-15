@@ -51,6 +51,7 @@ if ('' !== $query) {
     $result = (new Searcher())->search(
         SearchQuery::create($query)
             ->withSourceIds(...$selectedSourceIds)
+            ->withFacets('namespace', 'type', 'clang_id')
             ->withPage($page, 20),
     );
 
@@ -89,7 +90,29 @@ if ('' !== $query) {
         if (1 < $result->getPageCount()) {
             $body .= ' <span class="text-muted">' . $addon->i18n('search_page_of', $result->getPage(), $result->getPageCount()) . '</span>';
         }
-        $body .= '</p><div class="list-group">';
+        $body .= '</p>';
+
+        // Verteilung ueber alle Treffer, nicht ueber die angezeigte Seite.
+        $clangName = static function (int $id): string {
+            $clang = rex_clang::get($id);
+
+            return null === $clang ? ($id > 0 ? '#' . $id : '–') : $clang->getName();
+        };
+        $verteilung = [];
+        foreach (['namespace' => 'search_facet_namespace', 'type' => 'search_facet_type', 'clang_id' => 'search_facet_clang'] as $facet => $label) {
+            $werte = [];
+            foreach ($result->getFacet($facet) as $wert => $anzahl) {
+                $werte[] = rex_escape('clang_id' === $facet ? $clangName((int) $wert) : (string) $wert) . ' <span class="badge">' . $anzahl . '</span>';
+            }
+            if ([] !== $werte) {
+                $verteilung[] = '<dt>' . $addon->i18n($label) . '</dt><dd>' . implode(' &middot; ', $werte) . '</dd>';
+            }
+        }
+        if ([] !== $verteilung) {
+            $body .= '<dl class="dl-horizontal">' . implode('', $verteilung) . '</dl>';
+        }
+
+        $body .= '<div class="list-group">';
 
         foreach ($result as $hit) {
             $title = '' !== $hit->title ? $hit->getHighlightedTitle() : rex_escape($hit->itemId);
@@ -106,11 +129,19 @@ if ('' !== $query) {
         $body .= '</div>';
 
         if (1 < $result->getPageCount()) {
-            $base = rex_url::currentBackendPage(['q' => $query, 'sources' => $selectedSourceIds]);
             $body .= '<ul class="pagination">';
             for ($p = 1; $p <= min(20, $result->getPageCount()); ++$p) {
+                // currentBackendPage() maskiert das Trennzeichen bereits zu &amp;. Noch
+                // einmal durch rex_escape() wuerde daraus &amp;amp;, der Browser machte
+                // daraus den Parameter "amp;q" -- die Seite bekaeme dann weder Suchbegriff
+                // noch Seitenzahl, und das Blaettern fuehrte stets zur leeren Suche.
+                $url = rex_url::currentBackendPage([
+                    'q' => $query,
+                    'sources' => $selectedSourceIds,
+                    'p' => $p,
+                ]);
                 $body .= '<li class="' . ($p === $result->getPage() ? 'active' : '') . '">'
-                    . '<a href="' . rex_escape($base . '&p=' . $p) . '">' . $p . '</a></li>';
+                    . '<a href="' . $url . '">' . $p . '</a></li>';
             }
             $body .= '</ul>';
         }

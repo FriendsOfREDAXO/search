@@ -282,15 +282,19 @@ Hundertfache eines Artikels, der dasselbe Thema in drei Sätzen auf den Punkt br
 rechnet deshalb um:
 
 1. `LN(1 + score)` sättigt die Trefferhäufigkeit.
-2. Die **exakte Wortform** bekommt einen Zuschlag. Gesucht wird mit `+burg*`, damit
+2. Wörter, die **nahe beieinander** stehen, bekommen einen Zuschlag. „Burg Eppstein" in
+   einem Satz ist stärker als dieselben Wörter irgendwo im selben Dokument – InnoDB kann
+   das selbst, über eine Wortgruppe mit Abstandsangabe (`"burg eppstein" @20`). Faktor und
+   Abstand über `withProximityBoost()`, Vorgabe `0.8` und 20 Wörter, `0.0` schaltet ab.
+3. Die **exakte Wortform** bekommt einen Zuschlag. Gesucht wird mit `+burg*`, damit
    Zusammensetzungen gefunden werden – ohne diesen Zuschlag läge eine Seite über das
    *Burgfest* gleichauf mit einer über die *Burg*. Faktor über `withExactBoost()`,
    Vorgabe `0.5`, `0.0` schaltet ab.
-3. Ein Treffer im **Titel** zählt zusätzlich, dafür gibt es einen zweiten Volltextindex über
+4. Ein Treffer im **Titel** zählt zusätzlich, dafür gibt es einen zweiten Volltextindex über
    `title` allein. Faktor über `withTitleBoost()`, Vorgabe `1.5`, `0.0` schaltet ab.
-4. Die **Länge** dämpft, aber erst oberhalb einer Schwelle und dann logarithmisch. Schwelle
+5. Die **Länge** dämpft, aber erst oberhalb einer Schwelle und dann logarithmisch. Schwelle
    über `withLengthScale()`, Vorgabe `5000` Zeichen, `0` schaltet ab.
-5. Optional ein Faktor je Quelle: `withSourceWeights([19 => 1.0, 20 => 0.5])`.
+6. Optional ein Faktor je Quelle: `withSourceWeights([19 => 1.0, 20 => 0.5])`.
 
 > **Warum ein Zuschlag und kein Abschlag.** Die naheliegende Fassung wäre `+(>burg <burg*)`:
 > exakt höher, Wortanfang niedriger. Die Modifikatoren ändern aber den Beitrag zur Bewertung,
@@ -304,6 +308,36 @@ rechnet deshalb um:
 > beide haben dieselbe Bewertung, der kürzere wird weniger geteilt. Der Textausschnitt im
 > Treffer wäre dann nur der Titel. Bei gleicher Bewertung gewinnt deshalb zusätzlich das
 > inhaltsreichere Dokument.
+
+### Relevanz und Schwelle
+
+`$hit->score` ist die rohe Bewertung: unbegrenzt, und abhängig vom Wortschatz des
+Bestands – `4.50` bedeutet auf jeder Installation etwas anderes. Daneben steht
+`$hit->relevance`, der **Anteil am besten Treffer dieser Suche**, zwischen 0 und 1. Erst
+der lässt sich vergleichen und als Schwelle verwenden:
+
+```php
+$result = $searcher->search(SearchQuery::create($begriff)->withMinRelevance(0.3));
+```
+
+Alles unter 30 Prozent des besten Treffers fällt dann heraus – nützlich, sobald
+Erweiterung und Korrektur mitlaufen und die Liste nach unten ausfranst. Gefiltert wird vor
+dem Blättern, `total` stimmt also.
+
+### Facetten
+
+```php
+$result = $searcher->search(
+    SearchQuery::create($begriff)->withFacets('namespace', 'type', 'clang_id'),
+);
+
+$result->getFacet('namespace');   // ['article' => 11, 'media' => 3]
+```
+
+Gezählt wird über **alle** Treffer der Suche, nicht über die angezeigte Seite – eine
+Verteilung, die sich beim Blättern ändert, wäre unbrauchbar. Es kostet nichts extra: die
+Kandidatenliste liegt für die Dublettenprüfung ohnehin vollständig vor. Erlaubt sind
+`namespace`, `type`, `source_id` und `clang_id`; andere Werte werden verworfen.
 
 ### Dubletten
 

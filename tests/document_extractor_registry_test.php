@@ -3,6 +3,7 @@
 use FriendsOfRedaxo\Search\Extract\DocumentExtractor;
 use FriendsOfRedaxo\Search\Extract\DocumentExtractorRegistry;
 use FriendsOfRedaxo\Search\Extract\ExtractedDocument;
+use FriendsOfRedaxo\Search\Extract\ExtractionCache;
 use FriendsOfRedaxo\Search\Extract\ExtractionContext;
 use PHPUnit\Framework\TestCase;
 
@@ -138,6 +139,33 @@ final class rex_search_document_extractor_registry_test extends TestCase
             }
         }
         $class->setStaticPropertyValue('extensions', $extensions);
+    }
+
+    public function testCacheKeyChangesWithTheExtractorVersion(): void
+    {
+        $alt = ExtractionCache::key('haushalt.pdf', 6960314, '2026-10-15 10:00:00', 'pdftotext', 1000000, 1);
+        $neu = ExtractionCache::key('haushalt.pdf', 6960314, '2026-10-15 10:00:00', 'pdftotext', 1000000, 2);
+
+        self::assertNotSame($alt, $neu);
+    }
+
+    public function testCacheKeyIsStableForTheSameFileAndVersion(): void
+    {
+        self::assertSame(
+            ExtractionCache::key('haushalt.pdf', 10, '2026-10-15 10:00:00', 'pdftotext', 1000, 2),
+            ExtractionCache::key('haushalt.pdf', 10, '2026-10-15 10:00:00', 'pdftotext', 1000, 2),
+        );
+    }
+
+    public function testCacheKeyReactsToEveryPartOfTheIdentity(): void
+    {
+        $basis = ExtractionCache::key('a.pdf', 10, '2026-10-15 10:00:00', 'pdftotext', 1000, 1);
+
+        self::assertNotSame($basis, ExtractionCache::key('b.pdf', 10, '2026-10-15 10:00:00', 'pdftotext', 1000, 1));
+        self::assertNotSame($basis, ExtractionCache::key('a.pdf', 11, '2026-10-15 10:00:00', 'pdftotext', 1000, 1));
+        self::assertNotSame($basis, ExtractionCache::key('a.pdf', 10, '2026-10-15 10:00:01', 'pdftotext', 1000, 1));
+        self::assertNotSame($basis, ExtractionCache::key('a.pdf', 10, '2026-10-15 10:00:00', 'pdfparser', 1000, 1));
+        self::assertNotSame($basis, ExtractionCache::key('a.pdf', 10, '2026-10-15 10:00:00', 'pdftotext', 2000, 1));
     }
 }
 

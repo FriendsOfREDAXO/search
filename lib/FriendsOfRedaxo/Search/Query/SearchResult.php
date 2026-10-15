@@ -27,6 +27,7 @@ final class SearchResult implements IteratorAggregate, Countable
      * @param int $total Treffer insgesamt, siehe $truncated
      * @param bool $truncated Die Gesamtzahl ist an der Kandidatengrenze abgeschnitten
      * @param array<string, string> $corrections Eingegebenes Wort auf gesuchte Schreibweise
+     * @param array<string, array<string, int>> $facets Spalte auf Auspraegung auf Anzahl
      */
     public function __construct(
         public readonly array $hits,
@@ -35,6 +36,7 @@ final class SearchResult implements IteratorAggregate, Countable
         public readonly SearchTerms $terms,
         public readonly bool $truncated = false,
         public readonly array $corrections = [],
+        public readonly array $facets = [],
     ) {}
 
     public static function empty(SearchQuery $query, SearchTerms $terms): self
@@ -114,5 +116,17 @@ final class SearchResult implements IteratorAggregate, Countable
     public function getExpansions(): array
     {
         return $this->terms->expansions;
+    }
+
+    /**
+     * Die Haeufigkeitsverteilung einer Spalte, haeufigste zuerst.
+     *
+     * Gezaehlt ueber alle Treffer der Suche, nicht ueber die angezeigte Seite.
+     *
+     * @return array<string, int> Auspraegung auf Anzahl
+     */
+    public function getFacet(string $column): array
+    {
+        return $this->facets[$column] ?? [];
     }
 }
