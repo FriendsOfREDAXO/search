@@ -4,6 +4,13 @@ use FriendsOfRedaxo\Search\Cronjob\ReindexCronjob;
 
 $addon = rex_addon::get('search');
 
+// Fremdbibliotheken fuer die Dokumentenextraktion. Fehlt das Verzeichnis, weil das AddOn
+// ohne composer install ausgeliefert wurde, laufen Volltext und Artikelquellen weiter;
+// nur HTML-nach-Markdown und der PDF-Rueckfall stehen dann nicht zur Verfuegung.
+if (is_file(__DIR__ . '/vendor/autoload.php')) {
+    require_once __DIR__ . '/vendor/autoload.php';
+}
+
 if (rex::isBackend() && 'search' === rex_be_controller::getCurrentPagePart(1)) {
     // Cache-Buster ueber die Dateizeit, damit Aenderungen am Skript ohne Versionssprung ankommen.
     foreach (['search.js' => 'js', 'search.css' => 'css'] as $asset => $kind) {

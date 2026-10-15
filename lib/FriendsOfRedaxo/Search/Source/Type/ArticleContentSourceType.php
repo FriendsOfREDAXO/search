@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Source\Type;
 
 use FriendsOfRedaxo\Search\Document\IndexDocument;
+use FriendsOfRedaxo\Search\Markdown;
 use FriendsOfRedaxo\Search\Source\ConfigField;
 use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Text;
@@ -68,14 +69,15 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
             return [];
         }
 
-        [$raw, $format] = $this->readRawContent($source, $article->getId(), $article->getClangId());
+        $html = $this->readHtml($source, $article->getId(), $article->getClangId());
+        [$raw, $format, $content] = $this->convert($html);
 
         return [
             new IndexDocument(
                 $itemId,
                 $itemId . '-' . $this->getType($source),
                 Text::truncate(Text::fromHtml($article->getName()), 255),
-                Text::fromHtml($raw),
+                $content,
                 $this->buildUrl($article),
                 $this->readUpdatedAt($article),
                 $article->getClangId(),
@@ -87,22 +89,40 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
     }
 
     /**
-     * Der Inhalt in seiner Originalform, dazu die Angabe, ob es Markup ist.
+     * Aus dem HTML des Artikels werden Originalinhalt, Format und Klartext in einem Schritt.
      *
-     * Bewusst wird hier nur einmal gerendert: der Klartext fuer den Volltextindex wird aus
-     * demselben Ergebnis abgeleitet, ein zweiter Rendervorgang waere der teuerste Teil des
-     * Aufbaus.
+     * Markdown ist hier der Regelfall: Ueberschriften, Listen und Tabellen bleiben erhalten,
+     * und der Klartext fuer den Volltext faellt aus demselben Ergebnis ab. Nebenbei wandert
+     * damit auch der Alt-Text von Bildern in den Index, der beim blossen Entfernen der Tags
+     * verloren ginge. Ohne das vendor-Verzeichnis bleibt es beim bisherigen Verhalten.
      *
-     * @return array{string, string}
+     * @return array{string, string, string} Originalinhalt, Format, Klartext
      */
-    private function readRawContent(Source $source, int $articleId, int $clangId): array
+    private function convert(string $html): array
+    {
+        if (Markdown::isAvailable()) {
+            $markdown = Markdown::fromHtml($html);
+
+            return [$markdown, IndexDocument::FORMAT_MARKDOWN, Markdown::toPlainText($markdown)];
+        }
+
+        return [$html, IndexDocument::FORMAT_HTML, Text::fromHtml($html)];
+    }
+
+    /**
+     * Der Inhalt als HTML.
+     *
+     * Bewusst wird hier nur einmal gerendert: alles Weitere wird aus demselben Ergebnis
+     * abgeleitet, ein zweiter Rendervorgang waere der teuerste Teil des Aufbaus.
+     */
+    private function readHtml(Source $source, int $articleId, int $clangId): string
     {
         if (self::MODE_RENDERED === $source->getConfig('mode') && class_exists(rex_article_content::class)) {
             try {
                 $content = new rex_article_content($articleId, $clangId);
                 $html = $content->getArticle();
                 if ('' !== trim($html)) {
-                    return [$html, IndexDocument::FORMAT_HTML];
+                    return $html;
                 }
             } catch (Throwable) {
                 // Module mit Frontend-Annahmen scheitern im Backend/CLI, dann greifen die Slice-Werte.
@@ -128,7 +148,7 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
             }
         }
 
-        // Slice-Werte koennen Markup enthalten, deshalb gelten sie als HTML.
-        return [Text::join($parts), IndexDocument::FORMAT_HTML];
+        // Slice-Werte koennen Markup enthalten und werden deshalb wie HTML behandelt.
+        return Text::join($parts);
     }
 }

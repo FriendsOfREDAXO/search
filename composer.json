@@ -1,0 +1,10 @@
+{
+    "require": {
+        "league/html-to-markdown": "^5.1",
+        "smalot/pdfparser": "^2.12"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    }
+}
