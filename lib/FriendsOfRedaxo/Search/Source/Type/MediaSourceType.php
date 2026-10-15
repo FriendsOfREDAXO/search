@@ -74,7 +74,7 @@ final class MediaSourceType extends SourceType
         return '{media_id}-' . $this->getType($source);
     }
 
-    public function getConfigFields(array $config): array
+    protected function getOwnConfigFields(array $config): array
     {
         $extensions = [];
         foreach (DocumentExtractorRegistry::supportedExtensions() as $extension) {

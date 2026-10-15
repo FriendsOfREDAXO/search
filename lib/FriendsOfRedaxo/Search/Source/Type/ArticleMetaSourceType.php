@@ -44,9 +44,9 @@ final class ArticleMetaSourceType extends AbstractArticleSourceType
         return 'meta';
     }
 
-    public function getConfigFields(array $config): array
+    protected function getOwnConfigFields(array $config): array
     {
-        $fields = parent::getConfigFields($config);
+        $fields = parent::getOwnConfigFields($config);
         $fields[] = new ConfigField(
             'fields',
             rex_i18n::msg('search_article_meta_fields'),

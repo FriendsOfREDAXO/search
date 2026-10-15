@@ -7,6 +7,7 @@ namespace FriendsOfRedaxo\Search\Index;
 use DateTimeImmutable;
 use FriendsOfRedaxo\Search\Document\IndexDocument;
 use FriendsOfRedaxo\Search\Source\Source;
+use FriendsOfRedaxo\Search\Word\WordRepository;
 use rex;
 use rex_sql;
 
@@ -122,9 +123,20 @@ class IndexRepository
         return $sql->getRows();
     }
 
+    /**
+     * Entfernt alle Dokumente einer Quelle, samt ihres Wortschatzes.
+     *
+     * Die Wortliste ist aus dem Index abgeleitet; verschwindet der Index einer Quelle, darf
+     * ihr Wortschatz nicht stehen bleiben. Das gehoert hierher und nicht an die Aufrufer:
+     * es gibt drei davon -- Quelle geloescht, Quelle nach Konfigurationsaenderung neu
+     * aufgebaut, Quelle nach Aenderung deaktiviert -- und beim zweiten und dritten habe ich
+     * es zuerst vergessen. Beim Neuaufbau schreibt der Indexer die Woerter danach ohnehin
+     * wieder.
+     */
     public function deleteBySource(int $sourceId): void
     {
         rex_sql::factory()->setQuery('DELETE FROM ' . self::table() . ' WHERE source_id = :source', ['source' => $sourceId]);
+        (new WordRepository())->deleteSource($sourceId);
     }
 
     public function countBySource(int $sourceId): int
@@ -139,66 +151,5 @@ class IndexRepository
         $rows = rex_sql::factory()->getArray('SELECT COUNT(*) AS c FROM ' . self::table());
 
         return (int) ($rows[0]['c'] ?? 0);
-    }
-
-    /**
-     * Einfache Volltextsuche im BOOLEAN MODE, gedacht fuer die Testsuche im Backend und als
-     * Ausgangspunkt fuer die eigentliche Such-API.
-     *
-     * @param list<string> $namespaces
-     * @param list<string> $types
-     * @param list<int> $sourceIds
-     * @return list<array<string, mixed>>
-     */
-    public function search(string $query, array $namespaces = [], array $types = [], int $limit = 20, array $sourceIds = []): array
-    {
-        $term = self::toBooleanQuery($query);
-        if ('' === $term) {
-            return [];
-        }
-
-        $where = ['MATCH (title, content) AGAINST (:term IN BOOLEAN MODE)'];
-        $params = ['term' => $term];
-
-        foreach (['namespace' => $namespaces, 'type' => $types, 'source_id' => $sourceIds] as $column => $values) {
-            if ([] === $values) {
-                continue;
-            }
-            $placeholders = [];
-            foreach (array_values($values) as $i => $value) {
-                $placeholders[] = ':' . $column . $i;
-                $params[$column . $i] = $value;
-            }
-            $where[] = $column . ' IN (' . implode(', ', $placeholders) . ')';
-        }
-
-        return rex_sql::factory()->getArray(
-            'SELECT id, source_id, namespace, type, item_id, index_id, title, url, clang_id, updated_at,'
-            . ' SUBSTRING(content, 1, 300) AS snippet,'
-            . ' MATCH (title, content) AGAINST (:term IN BOOLEAN MODE) AS score'
-            . ' FROM ' . self::table()
-            . ' WHERE ' . implode(' AND ', $where)
-            . ' ORDER BY score DESC, id ASC'
-            . ' LIMIT ' . max(1, $limit),
-            $params,
-        );
-    }
-
-    /**
-     * Macht aus freier Eingabe eine BOOLEAN-MODE-Abfrage: jedes Wort ist Pflicht und darf
-     * am Ende erweitert sein ("+such*"). Operatorzeichen des Nutzers werden entfernt.
-     */
-    public static function toBooleanQuery(string $query): string
-    {
-        $words = preg_split('/\s+/u', trim((string) preg_replace('/[+\-<>()~*"@]/u', ' ', $query))) ?: [];
-        $parts = [];
-        foreach ($words as $word) {
-            if ('' === $word) {
-                continue;
-            }
-            $parts[] = '+' . $word . '*';
-        }
-
-        return implode(' ', $parts);
     }
 }

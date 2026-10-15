@@ -35,4 +35,27 @@ rex_sql_table::get(rex::getTable('search_index'))
     ->ensureIndex(new rex_sql_index('source_item', ['source_id', 'item_id']))
     ->ensureIndex(new rex_sql_index('namespace_type', ['namespace', 'type']))
     ->ensureIndex(new rex_sql_index('fulltext_content', ['title', 'content'], rex_sql_index::FULLTEXT))
+    ->ensureIndex(new rex_sql_index('fulltext_title', ['title'], rex_sql_index::FULLTEXT))
+    ->ensure();
+
+// Der Wortschatz des Index, Grundlage fuer Teiltreffer und Tippfehlerkorrektur.
+//
+// word ist varbinary, nicht varchar: unter utf8mb4_general_ci gelten "gross" und "groß" als
+// dasselbe, ein eindeutiger Schluessel darauf wuerde eines der beiden verschlucken. Verglichen
+// wird ohnehin ueber word_folded, angezeigt wird word.
+//
+// clang_id ist hier 0 statt NULL, weil MySQL in einem UNIQUE-Index beliebig viele NULL-Werte
+// zulaesst und der Schluessel damit nichts mehr garantieren wuerde.
+rex_sql_table::get(rex::getTable('search_word'))
+    ->ensurePrimaryIdColumn()
+    ->ensureColumn(new rex_sql_column('word', 'varbinary(96)'))
+    ->ensureColumn(new rex_sql_column('word_folded', 'varchar(96)'))
+    ->ensureColumn(new rex_sql_column('word_length', 'tinyint(3) unsigned', false, '0'))
+    ->ensureColumn(new rex_sql_column('source_id', 'int(11)'))
+    ->ensureColumn(new rex_sql_column('clang_id', 'int(11)', false, '0'))
+    ->ensureColumn(new rex_sql_column('docs', 'int(11)', false, '0'))
+    ->ensureIndex(new rex_sql_index('source_clang_word', ['source_id', 'clang_id', 'word'], rex_sql_index::UNIQUE))
+    ->ensureIndex(new rex_sql_index('folded', ['word_folded']))
+    ->ensureIndex(new rex_sql_index('length_source', ['word_length', 'source_id']))
+    ->removeColumn('word_rev')
     ->ensure();

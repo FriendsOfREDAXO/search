@@ -18,3 +18,4 @@ requires:
 
 console_commands:
     search:index: rex_search_command_index
+    search:words: rex_search_command_words

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Source;
 
 use FriendsOfRedaxo\Search\Document\IndexDocument;
+use rex_i18n;
 
 /**
  * Vertrag fuer einen Quellentyp.
@@ -59,7 +60,38 @@ abstract class SourceType
      * @param array<string, mixed> $config
      * @return list<ConfigField>
      */
-    abstract public function getConfigFields(array $config): array;
+    abstract protected function getOwnConfigFields(array $config): array;
+
+    /**
+     * Die Felder des Typs, dahinter die, die jede Quelle hat.
+     *
+     * Final, damit das gemeinsame Feld nicht in einem Typ vergessen werden kann.
+     *
+     * @param array<string, mixed> $config
+     * @return list<ConfigField>
+     */
+    final public function getConfigFields(array $config): array
+    {
+        return [...$this->getOwnConfigFields($config), ...self::getCommonConfigFields()];
+    }
+
+    /**
+     * Felder, die jede Quelle hat, unabhaengig vom Typ.
+     *
+     * @return list<ConfigField>
+     */
+    public static function getCommonConfigFields(): array
+    {
+        return [
+            new ConfigField(
+                'collect_words',
+                rex_i18n::msg('search_source_collect_words'),
+                ConfigField::CHECKBOX,
+                notice: rex_i18n::msg('search_source_collect_words_notice'),
+                default: true,
+            ),
+        ];
+    }
 
     /**
      * Fachliche Pruefung der Config, Pflichtfelder prueft das Backend selbst.

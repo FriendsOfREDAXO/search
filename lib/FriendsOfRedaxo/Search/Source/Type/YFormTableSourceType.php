@@ -47,7 +47,7 @@ final class YFormTableSourceType extends SourceType
         return rex_addon::exists('yform') && rex_addon::get('yform')->isAvailable() && class_exists(rex_yform_manager_table::class);
     }
 
-    public function getConfigFields(array $config): array
+    protected function getOwnConfigFields(array $config): array
     {
         $tables = [];
         foreach (rex_yform_manager_table::getAll() as $table) {

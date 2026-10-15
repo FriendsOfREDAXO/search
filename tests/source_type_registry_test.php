@@ -56,11 +56,12 @@ final class rex_search_source_type_registry_test extends TestCase
         $config = $type->normalizeConfig(['title' => ' Hallo ', 'tags' => ['a', '', 'b']]);
 
         // Eine nicht gesendete Checkbox ist abgewaehlt, ihr Default gilt nur fuer das leere Formular
-        self::assertSame(['title' => 'Hallo', 'tags' => ['a', 'b'], 'active' => false], $config);
+        self::assertSame(['title' => 'Hallo', 'tags' => ['a', 'b'], 'active' => false, 'collect_words' => false], $config);
 
-        $config = $type->normalizeConfig(['title' => 'Hallo', 'active' => '1']);
+        // collect_words hat jede Quelle, unabhaengig vom Typ.
+        $config = $type->normalizeConfig(['title' => 'Hallo', 'active' => '1', 'collect_words' => '1']);
 
-        self::assertSame(['title' => 'Hallo', 'tags' => [], 'active' => true], $config);
+        self::assertSame(['title' => 'Hallo', 'tags' => [], 'active' => true, 'collect_words' => true], $config);
     }
 
     private function createType(string $key, bool $available): SourceType
@@ -86,7 +87,7 @@ final class rex_search_source_type_registry_test extends TestCase
                 return $this->available;
             }
 
-            public function getConfigFields(array $config): array
+            protected function getOwnConfigFields(array $config): array
             {
                 return [
                     new ConfigField('title', 'Titel'),
