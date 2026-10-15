@@ -28,6 +28,10 @@ braucht, legt mehrere Quellen an; die Quellenliste zeigt Namespace, Typ und Must
   alle oder ausgewählte Kategorien samt Unterkategorien, Offline-Artikel und Inhaltsquelle (Slice-Werte oder gerenderter Artikel).
 - **Artikel-Metadaten** (`article` / `meta`, `{article_id}-{clang_id}-meta`): wie oben, dazu die
   Auswahl der Felder aus Artikelname und den aktuell definierten Metainfo-Feldern `art_*`.
+- **Medienpool-Dokumente** (`media` / `document`, `{media_id}-document`): alle oder ausgewählte
+  Medienkategorien samt Unterkategorien, Dateitypen, Größenobergrenze und ob Titel, Beschreibung
+  und Copyright aus dem Medienpool mit in den Inhalt kommen. Was gelesen werden kann, entscheiden
+  die Extraktoren, siehe unten.
 
 Beide Artikel-Typen teilen sich den Namespace `article`. Ein Artikel unter einer offline
 geschalteten Kategorie gilt als nicht erreichbar und fällt beim nächsten Aufbau aus dem Index. Ein Quellentyp kann `getNamespace()` überschreiben, um sich einen
@@ -41,19 +45,29 @@ Jedes Dokument wird zweifach abgelegt.
 restliche Tags weg, Entities aufgelöst, Leerraum normalisiert. Nur diese Spalte liegt
 zusammen mit `title` im FULLTEXT-Index, die Suche arbeitet ausschließlich darauf.
 
-`content_raw` ist derselbe Inhalt vor der Umwandlung, also etwa das gerenderte HTML eines
-Artikels samt Überschriften, Listen und Tabellen. Die Spalte ist bewusst **nicht** Teil des
-Volltextindex, sonst wären Klassennamen und Link-Ziele durchsuchbar. Sie ist für die
+`content_raw` ist derselbe Inhalt mit seiner Struktur, in aller Regel **Markdown**:
+Überschriften, Listen und Tabellen bleiben erhalten. Die Spalte ist bewusst **nicht** Teil des
+Volltextindex, sonst wären Tabellenstriche und Link-Ziele durchsuchbar. Sie ist für die
 Weiterverarbeitung da, etwa zum Zerlegen an Überschriften für eine semantische Suche.
 
-`content_raw_format` sagt, worum es sich handelt: `html` oder `text`. Die Regel dafür: HTML
-nur dort, wo Markup zur Bauart gehört, also beim Inhalt eines Artikels. Feldwerte aus YForm
-oder aus Metainfos gelten als Klartext. Die umgekehrte Verwechslung wäre teurer, denn wer
-Klartext als Markup behandelt, verliert aus `5 < 10` den halben Satz.
+`content_raw_format` sagt, worum es sich handelt:
 
-Ein Artikel wird dabei nur **einmal** gerendert; der Klartext entsteht aus demselben
-Ergebnis. Der Inhalts-Hash deckt beide Fassungen ab, eine Änderung nur an der Struktur wird
-also erkannt.
+| Wert | wann | Beispiel |
+|---|---|---|
+| `markdown` | der Regelfall für alles mit Struktur | Artikel-Inhalt, Medienpool-Dokumente |
+| `text` | Feldwerte ohne Markup | YForm-Felder, Artikel-Metadaten |
+| `html` | nur als Rückfall, wenn das `vendor`-Verzeichnis fehlt | Artikel-Inhalt ohne Abhängigkeiten |
+
+Die Regel dafür: Markdown überall, wo die Struktur etwas bedeutet. Feldwerte aus YForm oder
+aus Metainfos sind Klartext; sie als Markup zu behandeln wäre teurer, denn aus `5 < 10` würde
+der halbe Satz verschwinden.
+
+Ein Artikel wird dabei nur **einmal** gerendert, eine Datei nur **einmal** gelesen; der
+Klartext entsteht jeweils aus demselben Ergebnis. Der Inhalts-Hash deckt beide Fassungen ab,
+eine Änderung nur an der Struktur wird also erkannt.
+
+Nebenbei landet damit auch der Alt-Text von Bildern im Index, der beim blossen Entfernen der
+Tags verloren ginge.
 
 ## Index aufbauen
 
@@ -109,6 +123,97 @@ Ein vollständiges Beispiel liegt im Projekt-AddOn unter `lib/Project/Search/`. 
 Artikelquellen auf die Inhalte ein, die für bestimmte YCom-Gruppen zugänglich sind:
 angemeldet oder nicht, und wenn angemeldet, in welchen Gruppen. Geprüft wird über YCom
 selbst, Vererbung über Kategorien und Gruppenrechte gelten damit ohne Zutun.
+
+## Dokumente aus dem Medienpool
+
+Der Quellentyp **Medienpool-Dokumente** liest Dateien und legt ihren Inhalt als Markdown ab.
+Womit eine Datei gelesen wird, entscheidet ein Extraktor; der Quellentyp selbst kennt weder
+PDF noch Office.
+
+| Extraktor | Formate | Umsetzung |
+|---|---|---|
+| `text` | `txt` `md` `csv` `tsv` `json` `xml` | eigener Code; aus CSV wird eine Markdown-Tabelle |
+| `html` | `html` `htm` `xhtml` | über `league/html-to-markdown` |
+| `office` | `docx` `odt` `xlsx` `ods` `pptx` `odp` | eigener Code, nur `ZipArchive` und `DOMXPath` |
+| `pdftotext` | `pdf` | Systemwerkzeug aus den Poppler-Utilities, Priorität 10 |
+| `pdfparser` | `pdf` | `smalot/pdfparser`, Rückfall ohne das Systemwerkzeug |
+
+**Zu PDF:** `pdftotext -layout` ist der bessere Weg. Gemessen an einem Haushaltsplan mit 386
+Seiten braucht es 0,8 Sekunden gegenüber gut fünfzehn mit der PHP-Bibliothek, und nur dort
+bleiben Spaltenpositionen erhalten — daraus lassen sich Tabellen zurückgewinnen. Fehlt das
+Werkzeug oder ist `exec()` gesperrt, übernimmt die Bibliothek; dann gibt es Text, aber keine
+Tabellen. Beides läuft ohne Zutun, der Extraktor mit der höheren Priorität gewinnt.
+
+**Zu Tabellen aus PDF:** Die Spaltenerkennung ist eine Heuristik. Rechtsbündige Zahlenspalten
+stehen unter einer Überschrift, die an anderer Stelle beginnt; eine Zuordnung lässt sich dann
+nicht behaupten. In solchen Fällen bleibt die Kopfzeile leer und die Überschriftzeile wird als
+gewöhnliche Datenzeile ausgegeben. Beschriftung und Werte einer Zeile bleiben immer beieinander.
+
+**Zwischenspeicher:** Extrahiertes Markdown liegt unter `data/addons/search/documents` — bewusst
+nicht unter `cache/`, denn ein Klick auf „Cache leeren" räumt den gesamten Cache-Baum ab und würde
+Stunden an Extraktionsarbeit vernichten. Der
+Schlüssel entsteht aus Dateiname, Größe und Änderungszeitpunkt des Medienpool-Eintrags, ohne
+die Datei zu lesen. Ein Neuaufbau ohne geänderte Dateien fasst deshalb keine Datei mehr an —
+gemessen 6,2 Sekunden beim ersten Lauf gegenüber 0,7 beim zweiten. Auch das Scheitern wird
+gemerkt, sonst kostet eine kaputte Datei bei jedem Lauf erneut die volle Zeit. Das Verzeichnis
+ist jederzeit löschbar.
+
+**Grenzen:** Dateien über der eingestellten Größe werden übersprungen, der erzeugte Text wird
+bei einer Million Zeichen an einer Zeilengrenze gekürzt und das Dokument als gekürzt vermerkt.
+
+## Eigenen Extraktor bereitstellen
+
+Über `SEARCH_DOCUMENT_EXTRACTORS` lässt sich ein Format ergänzen oder ein mitgelieferter
+Extraktor ersetzen — wer eine höhere Priorität meldet und dieselbe Endung bedient, kommt
+zuerst zum Zug. So kann ein Projekt für PDFs eine OCR-Anbindung oder einen eigenen Dienst
+einhängen, ohne dass hier etwas geändert werden muss.
+
+```php
+rex_extension::register('SEARCH_DOCUMENT_EXTRACTORS', static function (rex_extension_point $ep) {
+    $extractors = $ep->getSubject();
+    $extractors[] = new MyOcrExtractor();
+
+    return $extractors;
+});
+```
+
+```php
+final class MyOcrExtractor extends FriendsOfRedaxo\Search\Extract\DocumentExtractor
+{
+    public function getKey(): string { return 'ocr'; }
+    public function getLabel(): string { return 'PDF über OCR'; }
+    public function getExtensions(): array { return ['pdf']; }
+    public function getPriority(): int { return 100; }
+    public function isAvailable(): bool { return /* Dienst erreichbar? */ true; }
+
+    public function extract(string $path, ExtractionContext $context): ?ExtractedDocument
+    {
+        $markdown = /* ... */ '';
+        [$markdown, $truncated] = $context->truncate($markdown);
+
+        return new ExtractedDocument($markdown, null, ['extractor' => $this->getKey()], $truncated);
+    }
+}
+```
+
+Liefert `extract()` null, gilt die Datei als nicht lesbar; das bricht den Indexlauf nicht ab.
+
+## Abhängigkeiten
+
+Das AddOn liefert zwei Bibliotheken im `vendor`-Verzeichnis mit:
+
+| Paket | Lizenz | Größe | wofür |
+|---|---|---|---|
+| `league/html-to-markdown` | MIT | 208 KB | HTML nach Markdown, samt Tabellen |
+| `smalot/pdfparser` | **LGPL-3.0** | 432 KB | PDF ohne Systemwerkzeug |
+
+`smalot/pdfparser` steht unter LGPL-3.0 und liegt unverändert im Verzeichnis. Fehlt das
+`vendor`-Verzeichnis, weil das AddOn ohne `composer install` ausgeliefert wurde, laufen
+Volltext und Artikelquellen weiter; nur die Umwandlung nach Markdown und der PDF-Rückfall
+stehen dann nicht zur Verfügung.
+
+Office-Formate brauchen bewusst **keine** Bibliothek. Alle sind ZIP-Archive mit XML darin;
+das reicht für eine Textextraktion vollständig aus.
 
 ## Eigenen Quellentyp bereitstellen
 

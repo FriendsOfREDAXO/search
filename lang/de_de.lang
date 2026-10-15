@@ -88,3 +88,25 @@ search_cronjob_no_sources = Keine Quellen zum Aufbauen gefunden.
 search_source_filters = Filter
 search_source_filters_none = keine
 search_source_filters_notice = Filter entscheiden, welche Datensätze überhaupt in den Index kommen. Ohne Auswahl wird alles aufgenommen. Mehrere Filter müssen alle zustimmen.
+
+search_type_media = Medienpool-Dokumente
+search_type_media_description = Indiziert Dateien aus dem Medienpool. Der Inhalt wird als Markdown abgelegt, der Volltext daraus abgeleitet.
+search_media_all_categories = Alle Medienkategorien
+search_media_categories = Medienkategorien
+search_media_categories_notice = Unterkategorien der gewählten Kategorien werden mit indiziert.
+search_media_extensions = Dateitypen
+search_media_extensions_notice = Ohne Auswahl werden alle Typen genommen, für die ein Extraktor bereitsteht.
+search_media_extensions_all = alle unterstützten Typen
+search_media_max_filesize = Maximale Dateigröße in MB
+search_media_max_filesize_notice = Größere Dateien werden übersprungen. Sehr große Dokumente kosten beim Aufbau viel Zeit und Speicher.
+search_media_max_filesize_invalid = Bitte eine ganze Zahl ab 1 eintragen.
+search_media_include_meta = Titel, Beschreibung und Copyright mit aufnehmen
+search_media_include_meta_notice = Die Metadaten aus dem Medienpool werden dem Inhalt vorangestellt.
+search_media_prefer_file_title = Titel aus der Datei bevorzugen
+search_media_prefer_file_title_notice = Sonst gilt der Titel aus dem Medienpool, und nur ersatzweise der aus der Datei.
+
+search_extractor_text = Text, Markdown und CSV
+search_extractor_html = HTML
+search_extractor_office = Office-Dokumente (Word, Excel, PowerPoint, OpenDocument)
+search_extractor_pdftotext = PDF über pdftotext
+search_extractor_pdfparser = PDF über PHP

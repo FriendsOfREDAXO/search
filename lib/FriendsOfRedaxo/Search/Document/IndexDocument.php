@@ -24,9 +24,14 @@ final class IndexDocument
     /** Der Originalinhalt ist Klartext; ein "<" darin ist ein Zeichen, kein Tag. */
     public const FORMAT_TEXT = 'text';
 
+    /** Der Originalinhalt ist Markdown: Struktur erhalten, trotzdem lesbar. */
+    public const FORMAT_MARKDOWN = 'markdown';
+
     /*
-     * Zur Wahl des Formats: HTML nur dort angeben, wo Markup zur Bauart gehoert, also beim
-     * Inhalt eines Artikels. Feldwerte aus YForm oder aus Metainfos gelten als Klartext.
+     * Zur Wahl des Formats: Markdown ist der Regelfall fuer alles, was Struktur hat, also
+     * fuer Artikelinhalte und fuer Dateien aus dem Medienpool. Feldwerte aus YForm oder aus
+     * Metainfos gelten als Klartext. HTML bleibt fuer Faelle, in denen die Umwandlung nach
+     * Markdown nicht zur Verfuegung steht.
      * Die umgekehrte Verwechslung waere teurer: wer Klartext als Markup behandelt, verliert
      * aus "5 < 10" den halben Satz, waehrend Markup als Klartext nur unschoen aussieht.
      */
