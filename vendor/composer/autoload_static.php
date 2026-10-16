@@ -8,27 +8,57 @@ class ComposerStaticInitafd7a6813034721cc5dbef9540d76ac8
 {
     public static $files = array (
         '0e6d7bf4a5811bfa5cf40c5ccd6fae6a' => __DIR__ . '/..' . '/symfony/polyfill-mbstring/bootstrap.php',
+        '6e3fae29631ef280660b3cdad06f25a8' => __DIR__ . '/..' . '/symfony/deprecation-contracts/function.php',
     );
 
     public static $prefixLengthsPsr4 = array (
+        'W' =>
+        array (
+            'Wamania\\Snowball\\' => 17,
+        ),
+        'T' =>
+        array (
+            'Toflar\\FastSet\\' => 15,
+        ),
         'S' =>
         array (
             'Symfony\\Polyfill\\Mbstring\\' => 26,
         ),
         'L' =>
         array (
+            'Loupe\\Matcher\\' => 14,
             'League\\HTMLToMarkdown\\' => 22,
+        ),
+        'J' =>
+        array (
+            'Joomla\\String\\' => 14,
         ),
     );
 
     public static $prefixDirsPsr4 = array (
+        'Wamania\\Snowball\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/wamania/php-stemmer/src',
+        ),
+        'Toflar\\FastSet\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/toflar/fast-set/src',
+        ),
         'Symfony\\Polyfill\\Mbstring\\' =>
         array (
             0 => __DIR__ . '/..' . '/symfony/polyfill-mbstring',
         ),
+        'Loupe\\Matcher\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/loupe/matcher/src',
+        ),
         'League\\HTMLToMarkdown\\' =>
         array (
             0 => __DIR__ . '/..' . '/league/html-to-markdown/src',
+        ),
+        'Joomla\\String\\' =>
+        array (
+            0 => __DIR__ . '/..' . '/joomla/string/src',
         ),
     );
 
@@ -44,6 +74,10 @@ class ComposerStaticInitafd7a6813034721cc5dbef9540d76ac8
 
     public static $classMap = array (
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',
+        'Joomla\\String\\Inflector' => __DIR__ . '/..' . '/joomla/string/src/Inflector.php',
+        'Joomla\\String\\Normalise' => __DIR__ . '/..' . '/joomla/string/src/Normalise.php',
+        'Joomla\\String\\StringHelper' => __DIR__ . '/..' . '/joomla/string/src/StringHelper.php',
+        'League\\HTMLToMarkdown\\Backticks' => __DIR__ . '/..' . '/league/html-to-markdown/src/Backticks.php',
         'League\\HTMLToMarkdown\\Coerce' => __DIR__ . '/..' . '/league/html-to-markdown/src/Coerce.php',
         'League\\HTMLToMarkdown\\Configuration' => __DIR__ . '/..' . '/league/html-to-markdown/src/Configuration.php',
         'League\\HTMLToMarkdown\\ConfigurationAwareInterface' => __DIR__ . '/..' . '/league/html-to-markdown/src/ConfigurationAwareInterface.php',
@@ -70,7 +104,54 @@ class ComposerStaticInitafd7a6813034721cc5dbef9540d76ac8
         'League\\HTMLToMarkdown\\Environment' => __DIR__ . '/..' . '/league/html-to-markdown/src/Environment.php',
         'League\\HTMLToMarkdown\\HtmlConverter' => __DIR__ . '/..' . '/league/html-to-markdown/src/HtmlConverter.php',
         'League\\HTMLToMarkdown\\HtmlConverterInterface' => __DIR__ . '/..' . '/league/html-to-markdown/src/HtmlConverterInterface.php',
+        'League\\HTMLToMarkdown\\LinkSyntax' => __DIR__ . '/..' . '/league/html-to-markdown/src/LinkSyntax.php',
         'League\\HTMLToMarkdown\\PreConverterInterface' => __DIR__ . '/..' . '/league/html-to-markdown/src/PreConverterInterface.php',
+        'League\\HTMLToMarkdown\\PrecedingMarkdown' => __DIR__ . '/..' . '/league/html-to-markdown/src/PrecedingMarkdown.php',
+        'League\\HTMLToMarkdown\\RawHtml' => __DIR__ . '/..' . '/league/html-to-markdown/src/RawHtml.php',
+        'League\\HTMLToMarkdown\\SiblingPositionCache' => __DIR__ . '/..' . '/league/html-to-markdown/src/SiblingPositionCache.php',
+        'Loupe\\Matcher\\Formatter' => __DIR__ . '/..' . '/loupe/matcher/src/Formatter.php',
+        'Loupe\\Matcher\\FormatterOptions' => __DIR__ . '/..' . '/loupe/matcher/src/FormatterOptions.php',
+        'Loupe\\Matcher\\FormatterResult' => __DIR__ . '/..' . '/loupe/matcher/src/FormatterResult.php',
+        'Loupe\\Matcher\\Formatting\\Cropper' => __DIR__ . '/..' . '/loupe/matcher/src/Formatting/Cropper.php',
+        'Loupe\\Matcher\\Formatting\\FormattedText' => __DIR__ . '/..' . '/loupe/matcher/src/Formatting/FormattedText.php',
+        'Loupe\\Matcher\\Formatting\\Highlighter' => __DIR__ . '/..' . '/loupe/matcher/src/Formatting/Highlighter.php',
+        'Loupe\\Matcher\\Formatting\\Transformer' => __DIR__ . '/..' . '/loupe/matcher/src/Formatting/Transformer.php',
+        'Loupe\\Matcher\\Formatting\\Truncator' => __DIR__ . '/..' . '/loupe/matcher/src/Formatting/Truncator.php',
+        'Loupe\\Matcher\\Formatting\\WindowPlanner' => __DIR__ . '/..' . '/loupe/matcher/src/Formatting/WindowPlanner.php',
+        'Loupe\\Matcher\\Locale' => __DIR__ . '/..' . '/loupe/matcher/src/Locale.php',
+        'Loupe\\Matcher\\Matcher' => __DIR__ . '/..' . '/loupe/matcher/src/Matcher.php',
+        'Loupe\\Matcher\\StopWords\\InMemoryStopWords' => __DIR__ . '/..' . '/loupe/matcher/src/StopWords/InMemoryStopWords.php',
+        'Loupe\\Matcher\\StopWords\\StopWordsInterface' => __DIR__ . '/..' . '/loupe/matcher/src/StopWords/StopWordsInterface.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\BoundaryCandidate' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/BoundaryCandidate.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\BoundaryContext' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/BoundaryContext.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\ConfigurationInterface' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/ConfigurationInterface.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\Decompounder' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/Decompounder.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\DefaultConfiguration' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/DefaultConfiguration.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\Dictionary\\DictionaryInterface' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/Dictionary/DictionaryInterface.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\Dictionary\\FastSetDictionary' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/Dictionary/FastSetDictionary.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\Dictionary\\VariantDictionary' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/Dictionary/VariantDictionary.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\Dictionary\\VariantExpanderInterface' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/Dictionary/VariantExpanderInterface.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\ResultCacheConfiguration' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/ResultCacheConfiguration.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\Term' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/Term.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\TermPool' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/TermPool.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\TermValidator\\DefaultTermValidator' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/TermValidator/DefaultTermValidator.php',
+        'Loupe\\Matcher\\Tokenizer\\Decompounder\\TermValidator\\TermValidatorInterface' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Decompounder/TermValidator/TermValidatorInterface.php',
+        'Loupe\\Matcher\\Tokenizer\\LocaleConfiguration\\AbstractPreconfiguredLocale' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/LocaleConfiguration/AbstractPreconfiguredLocale.php',
+        'Loupe\\Matcher\\Tokenizer\\LocaleConfiguration\\English' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/LocaleConfiguration/English.php',
+        'Loupe\\Matcher\\Tokenizer\\LocaleConfiguration\\German' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/LocaleConfiguration/German.php',
+        'Loupe\\Matcher\\Tokenizer\\LocaleConfiguration\\German\\GermanDecompounderConfiguration' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/LocaleConfiguration/German/GermanDecompounderConfiguration.php',
+        'Loupe\\Matcher\\Tokenizer\\LocaleConfiguration\\German\\GermanNormalizer' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/LocaleConfiguration/German/GermanNormalizer.php',
+        'Loupe\\Matcher\\Tokenizer\\LocaleConfiguration\\German\\GermanVariantExpander' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/LocaleConfiguration/German/GermanVariantExpander.php',
+        'Loupe\\Matcher\\Tokenizer\\LocaleConfiguration\\LocaleConfigurationInterface' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/LocaleConfiguration/LocaleConfigurationInterface.php',
+        'Loupe\\Matcher\\Tokenizer\\MatchSpan' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/MatchSpan.php',
+        'Loupe\\Matcher\\Tokenizer\\Normalizer\\Normalizer' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Normalizer/Normalizer.php',
+        'Loupe\\Matcher\\Tokenizer\\Normalizer\\NormalizerInterface' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Normalizer/NormalizerInterface.php',
+        'Loupe\\Matcher\\Tokenizer\\Phrase' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Phrase.php',
+        'Loupe\\Matcher\\Tokenizer\\Span' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Span.php',
+        'Loupe\\Matcher\\Tokenizer\\Token' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Token.php',
+        'Loupe\\Matcher\\Tokenizer\\TokenCollection' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/TokenCollection.php',
+        'Loupe\\Matcher\\Tokenizer\\Tokenizer' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/Tokenizer.php',
+        'Loupe\\Matcher\\Tokenizer\\TokenizerInterface' => __DIR__ . '/..' . '/loupe/matcher/src/Tokenizer/TokenizerInterface.php',
         'Smalot\\PdfParser\\Config' => __DIR__ . '/..' . '/smalot/pdfparser/src/Smalot/PdfParser/Config.php',
         'Smalot\\PdfParser\\Document' => __DIR__ . '/..' . '/smalot/pdfparser/src/Smalot/PdfParser/Document.php',
         'Smalot\\PdfParser\\Element' => __DIR__ . '/..' . '/smalot/pdfparser/src/Smalot/PdfParser/Element.php',
@@ -118,6 +199,28 @@ class ComposerStaticInitafd7a6813034721cc5dbef9540d76ac8
         'Smalot\\PdfParser\\XObject\\Form' => __DIR__ . '/..' . '/smalot/pdfparser/src/Smalot/PdfParser/XObject/Form.php',
         'Smalot\\PdfParser\\XObject\\Image' => __DIR__ . '/..' . '/smalot/pdfparser/src/Smalot/PdfParser/XObject/Image.php',
         'Symfony\\Polyfill\\Mbstring\\Mbstring' => __DIR__ . '/..' . '/symfony/polyfill-mbstring/Mbstring.php',
+        'Toflar\\FastSet\\FastSet' => __DIR__ . '/..' . '/toflar/fast-set/src/FastSet.php',
+        'Toflar\\FastSet\\SetBuilder' => __DIR__ . '/..' . '/toflar/fast-set/src/SetBuilder.php',
+        'Wamania\\Snowball\\NotFoundException' => __DIR__ . '/..' . '/wamania/php-stemmer/src/NotFoundException.php',
+        'Wamania\\Snowball\\StemmerFactory' => __DIR__ . '/..' . '/wamania/php-stemmer/src/StemmerFactory.php',
+        'Wamania\\Snowball\\StemmerManager' => __DIR__ . '/..' . '/wamania/php-stemmer/src/StemmerManager.php',
+        'Wamania\\Snowball\\Stemmer\\Catalan' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Catalan.php',
+        'Wamania\\Snowball\\Stemmer\\Danish' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Danish.php',
+        'Wamania\\Snowball\\Stemmer\\Dutch' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Dutch.php',
+        'Wamania\\Snowball\\Stemmer\\English' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/English.php',
+        'Wamania\\Snowball\\Stemmer\\Finnish' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Finnish.php',
+        'Wamania\\Snowball\\Stemmer\\French' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/French.php',
+        'Wamania\\Snowball\\Stemmer\\German' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/German.php',
+        'Wamania\\Snowball\\Stemmer\\Italian' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Italian.php',
+        'Wamania\\Snowball\\Stemmer\\Norwegian' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Norwegian.php',
+        'Wamania\\Snowball\\Stemmer\\Portuguese' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Portuguese.php',
+        'Wamania\\Snowball\\Stemmer\\Romanian' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Romanian.php',
+        'Wamania\\Snowball\\Stemmer\\Russian' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Russian.php',
+        'Wamania\\Snowball\\Stemmer\\Spanish' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Spanish.php',
+        'Wamania\\Snowball\\Stemmer\\Stem' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Stem.php',
+        'Wamania\\Snowball\\Stemmer\\Stemmer' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Stemmer.php',
+        'Wamania\\Snowball\\Stemmer\\Swedish' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Stemmer/Swedish.php',
+        'Wamania\\Snowball\\Transliterate' => __DIR__ . '/..' . '/wamania/php-stemmer/src/Transliterate.php',
     );
 
     public static function getInitializer(ClassLoader $loader)

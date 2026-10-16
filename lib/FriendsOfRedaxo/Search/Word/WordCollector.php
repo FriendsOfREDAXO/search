@@ -17,18 +17,23 @@ use function count;
  * geschrieben. Das ist Absicht: nur ein vollstaendig durchgelaufener Lauf kennt den
  * Wortschatz einer Quelle vollstaendig, und nur dann darf der alte ersetzt werden. Bricht
  * der Lauf ab, bleibt der bisherige Stand stehen.
+ *
+ * Die Sprache steht am Sammler und nicht am einzelnen Text: sie gehoert der Quelle. Ein
+ * Dokument, das mehrere Sprachen mischt, laesst sich nachtraeglich nicht mehr trennen --
+ * deshalb muss eine Quelle einsprachig sein, siehe {@see FriendsOfRedaxo\Search\Language}.
  */
 final class WordCollector
 {
     /**
-     * Wort und Sprache auf Dokumentzahl.
+     * Kleingeschriebenes Wort auf Schreibweise und Dokumentzahl.
      *
-     * @var array<string, array{word: string, clang: int, docs: int}>
+     * @var array<string, array{word: string, docs: int}>
      */
     private array $words = [];
 
     public function __construct(
         private readonly int $sourceId,
+        private readonly string $language = '',
     ) {}
 
     public function getSourceId(): int
@@ -36,20 +41,24 @@ final class WordCollector
         return $this->sourceId;
     }
 
+    public function getLanguage(): string
+    {
+        return $this->language;
+    }
+
     /**
      * Nimmt den Text eines Dokuments auf. Jedes Wort zaehlt je Dokument einmal.
      */
-    public function add(string $text, ?int $clangId): void
+    public function add(string $text): void
     {
-        $clang = $clangId ?? 0;
         foreach (WordFolder::tokenize($text) as $word) {
-            $key = $clang . "\0" . mb_strtolower($word);
+            $key = mb_strtolower($word);
             if (isset($this->words[$key])) {
                 ++$this->words[$key]['docs'];
                 $this->words[$key]['word'] = WordFolder::preferredSpelling($this->words[$key]['word'], $word);
                 continue;
             }
-            $this->words[$key] = ['word' => $word, 'clang' => $clang, 'docs' => 1];
+            $this->words[$key] = ['word' => $word, 'docs' => 1];
         }
     }
 
@@ -64,7 +73,7 @@ final class WordCollector
     }
 
     /**
-     * @return list<array{word: string, clang: int, docs: int}>
+     * @return list<array{word: string, docs: int}>
      */
     public function toArray(): array
     {

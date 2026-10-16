@@ -9,6 +9,7 @@ use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
 use FriendsOfRedaxo\Search\Source\SourceType;
 use FriendsOfRedaxo\Search\Word\WordCollector;
+use FriendsOfRedaxo\Search\Word\WordFormRepository;
 use FriendsOfRedaxo\Search\Word\WordRepository;
 
 use function count;
@@ -23,14 +24,16 @@ final class Indexer
     private IndexRepository $index;
     private SourceRepository $sources;
     private WordRepository $words;
+    private WordFormRepository $forms;
 
     private ?WordCollector $collector = null;
 
-    public function __construct(?IndexRepository $index = null, ?SourceRepository $sources = null, ?WordRepository $words = null)
+    public function __construct(?IndexRepository $index = null, ?SourceRepository $sources = null, ?WordRepository $words = null, ?WordFormRepository $forms = null)
     {
         $this->index = $index ?? new IndexRepository();
         $this->sources = $sources ?? new SourceRepository();
         $this->words = $words ?? new WordRepository();
+        $this->forms = $forms ?? new WordFormRepository();
     }
 
     /**
@@ -53,7 +56,9 @@ final class Indexer
         // die Hand geht -- ohne einen zusaetzlichen Lesezugriff, gemessen rund zwei Prozent
         // Aufschlag. Geschrieben wird erst am Ende: nur ein vollstaendig durchgelaufener
         // Lauf kennt den Wortschatz einer Quelle ganz und darf den alten ersetzen.
-        $this->collector = $source->getConfig('collect_words', true) ? new WordCollector($source->requireId()) : null;
+        $this->collector = $source->getConfig('collect_words', true)
+            ? new WordCollector($source->requireId(), $source->getLanguage())
+            : null;
 
         $offset = 0;
         $items = 0;
@@ -86,8 +91,12 @@ final class Indexer
 
         if (null === $this->collector) {
             $this->words->deleteSource($source->requireId());
+            $this->forms->deleteSource($source->requireId());
         } else {
             $this->words->replaceSource($this->collector);
+            // Die Nachschlageformen entstehen aus derselben Liste und werden im selben Zug
+            // ersetzt; sonst zeigten sie nach einem Lauf auf Woerter, die es nicht mehr gibt.
+            $this->forms->replaceSource($this->collector);
             $this->collector = null;
         }
 
@@ -138,7 +147,7 @@ final class Indexer
             $indexIds[] = $document->indexId;
             // Auch unveraenderte Dokumente liefern Woerter: der Wortschatz entsteht aus dem
             // Bestand, nicht aus den Aenderungen.
-            $this->collector?->add($document->title . ' ' . $document->content, $document->clangId);
+            $this->collector?->add($document->title . ' ' . $document->content);
             if ($this->index->store($source, $namespace, $typeName, $document, $at)) {
                 ++$written;
             }

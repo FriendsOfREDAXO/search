@@ -17,6 +17,7 @@ final class SearchHit
 {
     /**
      * @param array<string, mixed> $meta
+     * @param string $language Die Sprache der Quelle, leer wenn keine angegeben ist
      * @param float $score Die rohe Bewertung, unbegrenzt und vom Bestand abhaengig
      * @param float $relevance Anteil an der besten Bewertung dieser Suche, 0 bis 1
      * @param list<string> $words Die Suchwoerter, fuer das Hervorheben
@@ -30,6 +31,7 @@ final class SearchHit
         public readonly string $title,
         public readonly string $url,
         public readonly ?int $clangId,
+        public readonly string $language,
         public readonly float $score,
         public readonly float $relevance = 0.0,
         public readonly string $snippet = '',
@@ -73,6 +75,7 @@ final class SearchHit
             'title' => $this->title,
             'url' => $this->url,
             'clang_id' => $this->clangId,
+            'language' => $this->language,
             'score' => $this->score,
             'relevance' => $this->relevance,
             'snippet' => $this->snippet,

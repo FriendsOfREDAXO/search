@@ -59,6 +59,29 @@ final class ScoreExpression
     }
 
     /**
+     * Ob der Treffer auch ohne die zusaetzlichen Formen gekommen waere, 1 oder 0.
+     *
+     * Das ist kein Zuschlag, sondern eine Vorsortierung, und sie ist noetig: eine
+     * Erweiterung darf Treffer hinzufuegen, aber nicht die vorhandenen verdraengen. Am
+     * Bestand gemessen schob "Häuser" ueber den gemeinsamen Stamm "haus" die
+     * Haushaltsplaene nach oben -- die enthalten "Haushalt" hundertfach, waehrend die
+     * Seiten ueber Haeuser das gesuchte Wort zweimal nennen. Mit einem Zuschlag waere das
+     * nicht zu halten gewesen: er muesste groesser sein als jeder denkbare Unterschied in
+     * der Trefferhaeufigkeit und waere damit kein Zuschlag mehr, sondern eine schlecht
+     * ausgedrueckte Vorsortierung.
+     *
+     * Leer, wenn gar nicht erweitert wurde -- dann sind alle Treffer direkte.
+     */
+    public function directMatch(): string
+    {
+        if (!$this->terms->isExpanded()) {
+            return '';
+        }
+
+        return '(' . $this->match('title, content', 'term_direct', $this->terms->getPlainExpression()) . ' > 0)';
+    }
+
+    /**
      * Die Parameter zum gebauten Ausdruck, gueltig nach {@see build()}.
      *
      * @return array<string, mixed>

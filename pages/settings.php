@@ -92,6 +92,7 @@ $fragment->setVar('content',
 $fragment->setVar('footer', '<p class="help-block">' . $addon->i18n('search_settings_extractors_notice') . '</p>', false);
 echo $fragment->parse('core/page/section.php');
 
+echo $section($addon->i18n('search_settings_languages'), Diagnosis::languages());
 echo $section($addon->i18n('search_settings_database'), Diagnosis::database());
 
 [$files] = Diagnosis::cacheSize();

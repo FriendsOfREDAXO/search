@@ -6,6 +6,10 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'Wamania\\Snowball\\' => array($vendorDir . '/wamania/php-stemmer/src'),
+    'Toflar\\FastSet\\' => array($vendorDir . '/toflar/fast-set/src'),
     'Symfony\\Polyfill\\Mbstring\\' => array($vendorDir . '/symfony/polyfill-mbstring'),
+    'Loupe\\Matcher\\' => array($vendorDir . '/loupe/matcher/src'),
     'League\\HTMLToMarkdown\\' => array($vendorDir . '/league/html-to-markdown/src'),
+    'Joomla\\String\\' => array($vendorDir . '/joomla/string/src'),
 );

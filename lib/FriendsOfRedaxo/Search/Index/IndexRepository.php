@@ -7,6 +7,7 @@ namespace FriendsOfRedaxo\Search\Index;
 use DateTimeImmutable;
 use FriendsOfRedaxo\Search\Document\IndexDocument;
 use FriendsOfRedaxo\Search\Source\Source;
+use FriendsOfRedaxo\Search\Word\WordFormRepository;
 use FriendsOfRedaxo\Search\Word\WordRepository;
 use rex;
 use rex_sql;
@@ -36,6 +37,7 @@ class IndexRepository
     public function store(Source $source, string $namespace, string $type, IndexDocument $document, DateTimeImmutable $indexedAt): bool
     {
         $sourceId = $source->requireId();
+        $language = $source->getLanguage();
         $hash = $document->getContentHash();
         $stamp = $indexedAt->format('Y-m-d H:i:s');
 
@@ -53,6 +55,10 @@ class IndexRepository
             $sql->setValue('item_id', $document->itemId);
             $sql->setValue('namespace', $namespace);
             $sql->setValue('type', $type);
+            // Die Sprache gehoert der Quelle, nicht dem Dokument, und geht deshalb nicht in
+            // den Inhalts-Hash ein. Sie muss trotzdem auch hier mitgeschrieben werden, sonst
+            // behielte eine unveraenderte Zeile nach einer Umstellung ihre alte Sprache.
+            $sql->setValue('language', $language);
             $sql->update();
 
             return false;
@@ -69,6 +75,7 @@ class IndexRepository
         $sql->setValue('content_raw_format', $document->rawFormat);
         $sql->setValue('url', mb_substr($document->url, 0, 1024));
         $sql->setValue('clang_id', $document->clangId);
+        $sql->setValue('language', $language);
         $sql->setValue('meta', json_encode($document->meta, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         $sql->setValue('content_hash', $hash);
         $sql->setValue('updated_at', $document->updatedAt?->format('Y-m-d H:i:s'));
@@ -131,12 +138,14 @@ class IndexRepository
      * es gibt drei davon -- Quelle geloescht, Quelle nach Konfigurationsaenderung neu
      * aufgebaut, Quelle nach Aenderung deaktiviert -- und beim zweiten und dritten habe ich
      * es zuerst vergessen. Beim Neuaufbau schreibt der Indexer die Woerter danach ohnehin
-     * wieder.
+     * wieder. Dasselbe gilt fuer die Nachschlageformen: sie zeigen auf die Woerter und
+     * waeren ohne sie Verweise ins Leere.
      */
     public function deleteBySource(int $sourceId): void
     {
         rex_sql::factory()->setQuery('DELETE FROM ' . self::table() . ' WHERE source_id = :source', ['source' => $sourceId]);
         (new WordRepository())->deleteSource($sourceId);
+        (new WordFormRepository())->deleteSource($sourceId);
     }
 
     public function countBySource(int $sourceId): int

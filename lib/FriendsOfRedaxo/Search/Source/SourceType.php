@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Source;
 
 use FriendsOfRedaxo\Search\Document\IndexDocument;
+use FriendsOfRedaxo\Search\Language;
 use rex_i18n;
 
 /**
@@ -63,16 +64,38 @@ abstract class SourceType
     abstract protected function getOwnConfigFields(array $config): array;
 
     /**
-     * Die Felder des Typs, dahinter die, die jede Quelle hat.
+     * Die Sprache voran, dann die Felder des Typs, dahinter die, die jede Quelle hat.
      *
-     * Final, damit das gemeinsame Feld nicht in einem Typ vergessen werden kann.
+     * Final, damit die gemeinsamen Felder nicht in einem Typ vergessen werden koennen --
+     * die Sprache am wenigsten: ohne sie waere die Analyse abgeschaltet, und zwar lautlos.
      *
      * @param array<string, mixed> $config
      * @return list<ConfigField>
      */
     final public function getConfigFields(array $config): array
     {
-        return [...$this->getOwnConfigFields($config), ...self::getCommonConfigFields()];
+        return [self::getLanguageConfigField(), ...$this->getOwnConfigFields($config), ...self::getCommonConfigFields()];
+    }
+
+    /**
+     * Die Sprache der Quelle.
+     *
+     * Pflichtfeld, und das ist der Punkt: Stammformen und Wortzerlegung sind sprachgebunden
+     * und mit der falschen Sprache falsch, abzuleiten ist die Sprache aber nirgends -- der
+     * Sprachcode einer REDAXO-Sprache ist freier Text, Medien und YForm-Datensaetze haben
+     * gar keinen clang. Wer keine angeben will oder kann, waehlt ausdruecklich "keine
+     * Angabe"; uebersehen laesst sich das Feld nicht.
+     */
+    public static function getLanguageConfigField(): ConfigField
+    {
+        return new ConfigField(
+            'language',
+            rex_i18n::msg('search_source_language'),
+            ConfigField::SELECT,
+            Language::options(),
+            rex_i18n::msg('search_source_language_notice'),
+            required: true,
+        );
     }
 
     /**
@@ -90,7 +113,8 @@ abstract class SourceType
     }
 
     /**
-     * Felder, die jede Quelle hat, unabhaengig vom Typ.
+     * Felder, die jede Quelle hinter ihren eigenen hat. Die Sprache steht davor, siehe
+     * {@see getLanguageConfigField()}.
      *
      * @return list<ConfigField>
      */

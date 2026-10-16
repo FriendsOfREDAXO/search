@@ -1,8 +1,10 @@
 <?php
 
 use FriendsOfRedaxo\Search\Index\IndexRepository;
+use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
 use FriendsOfRedaxo\Search\Word\WordCollector;
+use FriendsOfRedaxo\Search\Word\WordFormRepository;
 use FriendsOfRedaxo\Search\Word\WordRepository;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -37,6 +39,7 @@ final class rex_search_command_words extends rex_console_command
     {
         $io = $this->getStyle($input, $output);
         $words = new WordRepository();
+        $forms = new WordFormRepository();
 
         $sourceId = $input->getOption('source');
         $sources = (new SourceRepository())->findAll();
@@ -53,16 +56,25 @@ final class rex_search_command_words extends rex_console_command
         foreach ($sources as $source) {
             if (!$source->getConfig('collect_words', true)) {
                 $words->deleteSource($source->requireId());
+                $forms->deleteSource($source->requireId());
                 $io->writeln($source->name . ': übersprungen, liefert keine Wörter');
                 continue;
             }
 
             $start = microtime(true);
-            $collector = $this->collect($source->requireId());
+            $collector = $this->collect($source);
             $written = $words->replaceSource($collector);
+            $formCount = $forms->replaceSource($collector);
             $gesamt += $written;
 
-            $io->writeln(sprintf('%s: %d Wörter in %.2f s', $source->name, $written, microtime(true) - $start));
+            $io->writeln(sprintf(
+                '%s: %d Wörter, %d Formen (%s) in %.2f s',
+                $source->name,
+                $written,
+                $formCount,
+                '' === $source->getLanguage() ? 'ohne Sprachangabe' : $source->getLanguage(),
+                microtime(true) - $start,
+            ));
         }
 
         $io->success(sprintf('Wortliste aufgebaut, %d Einträge.', $gesamt));
@@ -70,14 +82,15 @@ final class rex_search_command_words extends rex_console_command
         return rex_console_command::SUCCESS;
     }
 
-    private function collect(int $sourceId): WordCollector
+    private function collect(Source $source): WordCollector
     {
-        $collector = new WordCollector($sourceId);
+        $sourceId = $source->requireId();
+        $collector = new WordCollector($sourceId, $source->getLanguage());
         $offset = 0;
 
         while (true) {
             $rows = rex_sql::factory()->getArray(
-                'SELECT title, content, clang_id FROM ' . IndexRepository::table()
+                'SELECT title, content FROM ' . IndexRepository::table()
                 . ' WHERE source_id = :s ORDER BY id LIMIT ' . self::BATCH . ' OFFSET ' . $offset,
                 ['s' => $sourceId],
             );
@@ -85,7 +98,7 @@ final class rex_search_command_words extends rex_console_command
                 break;
             }
             foreach ($rows as $row) {
-                $collector->add((string) $row['title'] . ' ' . (string) $row['content'], null === $row['clang_id'] ? null : (int) $row['clang_id']);
+                $collector->add((string) $row['title'] . ' ' . (string) $row['content']);
             }
             $offset += self::BATCH;
         }

@@ -29,7 +29,7 @@ use const JSON_THROW_ON_ERROR;
  * um die es hier geht (ein paar zehntausend Zeilen), kostet das nichts.
  *
  * Die Bewertung steht in {@see ScoreExpression} und nirgends sonst.
- * @phpstan-type Candidate array{id: int, namespace: string, item_id: string, type: string, source_id: int, clang_id: int, score: float}
+ * @phpstan-type Candidate array{id: int, namespace: string, item_id: string, type: string, source_id: int, clang_id: int, language: string, direct: bool, score: float, relevance?: float}
  */
 final class Searcher
 {
@@ -117,7 +117,7 @@ final class Searcher
         // stehen: hier wird ergaenzt, nicht ersetzt.
         $expansions = $terms->expansions;
         foreach ($terms->words as $word) {
-            $forms = $this->expander()->expand($word, $query->getSourceIds(), $query->getClangIds());
+            $forms = $this->expander()->expand($word, $query->getSourceIds(), $query->getLanguages());
             foreach ($forms as $form) {
                 if (!in_array($form, $expansions[$word] ?? [], true)) {
                     $expansions[$word][] = $form;
@@ -139,7 +139,7 @@ final class Searcher
 
         $corrections = [];
         foreach ($terms->words as $word) {
-            $correction = $this->expander()->correct($word, $query->getSourceIds(), $query->getClangIds());
+            $correction = $this->expander()->correct($word, $query->getSourceIds(), $query->getLanguages());
             if (null !== $correction) {
                 $corrections[$word] = $correction;
             }
@@ -177,14 +177,14 @@ final class Searcher
 
         // Die Bewertung ist unbegrenzt und haengt am Wortschatz des Bestands; erst der
         // Anteil am besten Treffer ist eine Zahl, die ueberall dasselbe bedeutet.
-        $best = $ranked[0]['score'] ?? 0.0;
-        $ranked = CandidateList::dropBelowMinRelevance($ranked, $best, $query->getMinRelevance());
+        $ranked = CandidateList::rank($ranked);
+        $ranked = CandidateList::dropBelowMinRelevance($ranked, $query->getMinRelevance());
 
         $facets = CandidateList::countFacets($ranked, $query->getFacets());
         $page = array_slice($ranked, $query->getOffset(), $query->getLimit());
 
         return new SearchResult(
-            [] === $page ? [] : $this->loadHits($page, $terms, $best),
+            [] === $page ? [] : $this->loadHits($page, $terms),
             count($ranked),
             $query,
             $terms,
@@ -203,6 +203,8 @@ final class Searcher
     {
         $expression = new ScoreExpression($query, $terms);
         $score = $expression->build();
+        // Vor der Bewertung steht, ob der Treffer auch ohne Erweiterung gekommen waere.
+        $direct = $expression->directMatch();
         $params = $expression->getParams();
 
         $where = ['MATCH (title, content) AGAINST (:term_filter IN BOOLEAN MODE)'];
@@ -219,12 +221,14 @@ final class Searcher
         }
 
         $rows = rex_sql::factory()->getArray(
-            'SELECT id, namespace, item_id, type, source_id, clang_id, ' . $score . ' AS score'
+            'SELECT id, namespace, item_id, type, source_id, clang_id, language,'
+            . ('' === $direct ? '' : ' ' . $direct . ' AS direct,')
+            . ' ' . $score . ' AS score'
             . ' FROM ' . self::table()
             . ' WHERE ' . implode(' AND ', $where)
             // Bei gleicher Bewertung gewinnt das inhaltsreichere Dokument: es liefert den
             // brauchbareren Textausschnitt, und beim Zusammenfassen bleibt der erste stehen.
-            . ' ORDER BY score DESC, CHAR_LENGTH(content) DESC, id ASC'
+            . ' ORDER BY ' . ('' === $direct ? '' : 'direct DESC, ') . 'score DESC, CHAR_LENGTH(content) DESC, id ASC'
             . ' LIMIT ' . $query->getCandidateLimit(),
             $params,
         );
@@ -238,6 +242,10 @@ final class Searcher
                 'type' => (string) $row['type'],
                 'source_id' => (int) $row['source_id'],
                 'clang_id' => null === $row['clang_id'] ? 0 : (int) $row['clang_id'],
+                'language' => (string) $row['language'],
+                // Ohne Erweiterung gibt es die Spalte nicht, dann ist jeder Treffer ein
+                // direkter.
+                'direct' => !isset($row['direct']) || (bool) $row['direct'],
                 'score' => (float) $row['score'],
             ];
         }
@@ -281,7 +289,7 @@ final class Searcher
      * @param list<Candidate> $page
      * @return list<SearchHit>
      */
-    private function loadHits(array $page, SearchTerms $terms, float $best): array
+    private function loadHits(array $page, SearchTerms $terms): array
     {
         $params = [];
         $ids = [];
@@ -295,7 +303,7 @@ final class Searcher
         $start = 'GREATEST(1, ' . $position . ' - ' . Snippet::LEAD . ')';
 
         $rows = rex_sql::factory()->getArray(
-            'SELECT id, source_id, namespace, type, item_id, title, url, clang_id, meta, updated_at,'
+            'SELECT id, source_id, namespace, type, item_id, title, url, clang_id, language, meta, updated_at,'
             . ' ' . $start . ' AS snippet_start,'
             . ' SUBSTRING(content, ' . $start . ', ' . Snippet::WINDOW . ') AS snippet_window'
             . ' FROM ' . self::table()
@@ -316,7 +324,7 @@ final class Searcher
                 // Fehler, der Treffer faellt einfach weg.
                 continue;
             }
-            $hits[] = $this->toHit($row, $candidate['score'], $best, $terms);
+            $hits[] = $this->toHit($row, $candidate['score'], $candidate['relevance'] ?? 0.0, $terms);
         }
 
         return $hits;
@@ -350,7 +358,7 @@ final class Searcher
     /**
      * @param array<string, mixed> $row
      */
-    private function toHit(array $row, float $score, float $best, SearchTerms $terms): SearchHit
+    private function toHit(array $row, float $score, float $relevance, SearchTerms $terms): SearchHit
     {
         $window = (string) ($row['snippet_window'] ?? '');
         $cutAtStart = 1 < (int) ($row['snippet_start'] ?? 1);
@@ -364,8 +372,9 @@ final class Searcher
             (string) $row['title'],
             (string) $row['url'],
             null === $row['clang_id'] ? null : (int) $row['clang_id'],
+            (string) $row['language'],
             $score,
-            CandidateList::relevance($score, $best),
+            $relevance,
             Snippet::fromWindow($window, $cutAtStart),
             $this->decodeMeta($row['meta'] ?? null),
             $this->toDate($row['updated_at'] ?? null),

@@ -66,4 +66,25 @@ final class rex_search_diagnosis_test extends TestCase
             rmdir($root);
         }
     }
+
+    /**
+     * Die Befunde kommen unmaskiert heraus; maskiert wird in der Seite, genau einmal.
+     * rex_i18n::msg() maskiert selbst -- mit ihm stand auf der Einstellungsseite
+     * "&quot;Häuser&quot; findet dort kein &quot;Haus&quot;" statt der Anfuehrungszeichen.
+     */
+    public function testTheFindingsAreNotAlreadyEscaped(): void
+    {
+        foreach ([...Diagnosis::php(), ...Diagnosis::tools()] as $check) {
+            self::assertStringNotContainsString('&quot;', $check['detail'], $check['label']);
+            self::assertStringNotContainsString('&amp;', $check['detail'], $check['label']);
+        }
+    }
+
+    public function testEveryFindingHasAKnownState(): void
+    {
+        foreach ([...Diagnosis::php(), ...Diagnosis::tools()] as $check) {
+            self::assertContains($check['state'], [Diagnosis::OK, Diagnosis::WARNING, Diagnosis::MISSING], $check['label']);
+            self::assertNotSame('', $check['label']);
+        }
+    }
 }

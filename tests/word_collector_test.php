@@ -8,17 +8,17 @@ final class rex_search_word_collector_test extends TestCase
 {
     public function testAWordIsCountedOncePerDocument(): void
     {
-        $collector = new WordCollector(7);
-        $collector->add('Burg Burg Burg', 1);
+        $collector = new WordCollector(7, 'de');
+        $collector->add('Burg Burg Burg');
 
-        self::assertSame([['word' => 'Burg', 'clang' => 1, 'docs' => 1]], $collector->toArray());
+        self::assertSame([['word' => 'Burg', 'docs' => 1]], $collector->toArray());
     }
 
     public function testTheSameWordInTwoDocumentsCountsTwice(): void
     {
-        $collector = new WordCollector(7);
-        $collector->add('Burg Eppstein', 1);
-        $collector->add('Burg Ruine', 1);
+        $collector = new WordCollector(7, 'de');
+        $collector->add('Burg Eppstein');
+        $collector->add('Burg Ruine');
 
         $docs = [];
         foreach ($collector->toArray() as $entry) {
@@ -28,28 +28,33 @@ final class rex_search_word_collector_test extends TestCase
         self::assertSame(['Burg' => 2, 'Eppstein' => 1, 'Ruine' => 1], $docs);
     }
 
-    public function testLanguagesAreCountedSeparately(): void
+    /**
+     * Die Sprache gehoert der Quelle, nicht dem einzelnen Text: dasselbe Wort zweimal
+     * aufzunehmen ergibt einen Eintrag, keine zwei. Frueher trennte der Sammler nach clang
+     * und zaehlte deshalb doppelt -- bei zwei REDAXO-Sprachen derselben Sprache zerfiel
+     * der Wortschatz damit grundlos.
+     */
+    public function testTheSameWordInTwoDocumentsIsOneEntry(): void
     {
-        $collector = new WordCollector(7);
-        $collector->add('Burg', 1);
-        $collector->add('Burg', 2);
+        $collector = new WordCollector(7, 'de');
+        $collector->add('Burg');
+        $collector->add('Burg');
 
-        self::assertCount(2, $collector->toArray());
+        self::assertCount(1, $collector->toArray());
+        self::assertSame(2, $collector->toArray()[0]['docs']);
     }
 
-    public function testDocumentsWithoutALanguageLandInZero(): void
+    public function testTheLanguageComesFromTheSource(): void
     {
-        $collector = new WordCollector(7);
-        $collector->add('Burg', null);
-
-        self::assertSame(0, $collector->toArray()[0]['clang']);
+        self::assertSame('de', (new WordCollector(7, 'de'))->getLanguage());
+        self::assertSame('', (new WordCollector(7))->getLanguage());
     }
 
     public function testAllCapsIsReplacedByAMixedSpellingFromAnotherDocument(): void
     {
-        $collector = new WordCollector(7);
-        $collector->add('EPPSTEIN', 1);
-        $collector->add('Eppstein', 1);
+        $collector = new WordCollector(7, 'de');
+        $collector->add('EPPSTEIN');
+        $collector->add('Eppstein');
 
         self::assertSame('Eppstein', $collector->toArray()[0]['word']);
         self::assertSame(2, $collector->toArray()[0]['docs']);
@@ -57,7 +62,7 @@ final class rex_search_word_collector_test extends TestCase
 
     public function testAFreshCollectorIsEmpty(): void
     {
-        $collector = new WordCollector(7);
+        $collector = new WordCollector(7, 'de');
 
         self::assertTrue($collector->isEmpty());
         self::assertSame(7, $collector->getSourceId());

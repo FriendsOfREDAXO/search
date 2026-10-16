@@ -1,19 +1,28 @@
 <?php
 
+use FriendsOfRedaxo\Search\Analysis\Analyzer;
 use FriendsOfRedaxo\Search\Word\WordExpander;
 use FriendsOfRedaxo\Search\Word\WordFolder;
+use FriendsOfRedaxo\Search\Word\WordFormRepository;
 use FriendsOfRedaxo\Search\Word\WordRepository;
 use PHPUnit\Framework\TestCase;
 
 /** @internal */
 final class rex_search_word_expander_test extends TestCase
 {
+    protected function setUp(): void
+    {
+        Analyzer::setCacheDirectory(sys_get_temp_dir() . '/rex-search-test-dictionaries');
+    }
+
     /**
-     * Wortliste im Speicher statt in der Datenbank.
+     * Wortliste und Formtabelle im Speicher statt in der Datenbank.
      *
      * @param array<string, int> $words Wort auf Dokumentzahl
+     * @param array<string, array<string, int>> $forms Form auf Wort auf Dokumentzahl
+     * @param list<string> $languages Sprachen, zu denen Formen vorliegen
      */
-    private function expander(array $words): WordExpander
+    private function expander(array $words, array $forms = [], array $languages = ['de']): WordExpander
     {
         $repository = new class($words) extends WordRepository {
             /** @param array<string, int> $words */
@@ -21,7 +30,7 @@ final class rex_search_word_expander_test extends TestCase
                 private array $words,
             ) {}
 
-            public function findByInfix(string $part, array $sourceIds = [], array $clangIds = [], int $limit = 10): array
+            public function findByInfix(string $part, array $sourceIds = [], array $languages = [], int $limit = 10): array
             {
                 $needle = WordFolder::fold($part);
                 $found = [];
@@ -35,7 +44,7 @@ final class rex_search_word_expander_test extends TestCase
                 return array_slice($found, 0, $limit);
             }
 
-            public function findByLength(int $min, int $max, array $sourceIds = [], array $clangIds = [], int $limit = 20000): array
+            public function findByLength(int $min, int $max, array $sourceIds = [], array $languages = [], int $limit = 20000): array
             {
                 $found = [];
                 foreach ($this->words as $word => $docs) {
@@ -48,7 +57,83 @@ final class rex_search_word_expander_test extends TestCase
             }
         };
 
-        return new WordExpander($repository);
+        $formRepository = new class($forms, $languages) extends WordFormRepository {
+            /**
+             * @param array<string, array<string, int>> $forms
+             * @param list<string> $languages
+             */
+            public function __construct(
+                private array $forms,
+                private array $languages,
+            ) {}
+
+            public function languages(): array
+            {
+                return $this->languages;
+            }
+
+            public function findByForms(array $forms, array $sourceIds = [], array $languages = [], int $limit = 20): array
+            {
+                $found = [];
+                foreach ($forms as $form) {
+                    foreach ($this->forms[$form] ?? [] as $word => $docs) {
+                        $found[] = ['word' => (string) $word, 'docs' => $docs];
+                    }
+                }
+                usort($found, static fn (array $a, array $b): int => $b['docs'] <=> $a['docs']);
+
+                return array_slice($found, 0, $limit);
+            }
+        };
+
+        return new WordExpander($repository, $formRepository);
+    }
+
+    /**
+     * Die Analyse liefert, was gemeint ist, die Suche nach enthaltenen Teilen alles, was
+     * die Zeichenfolge enthaelt. Hier steht beides nebeneinander: "Burgruine" kommt ueber
+     * den Stamm "ruin", "Ruinenbegeisterung" nur ueber den Teilstring -- und zwar danach.
+     */
+    public function testAnalysedFormsComeFirstAndTheSubstringSearchFillsUp(): void
+    {
+        $expander = $this->expander(
+            ['Ruine' => 4, 'Burgruine' => 3, 'Ruinenbegeisterung' => 9],
+            ['ruin' => ['Burgruine' => 3]],
+        );
+
+        // Ohne die Analyse stuende das haeufigere "Ruinenbegeisterung" vorn -- es faellt
+        // aber unter "+Ruine*" und wird gar nicht erst aufgezaehlt.
+        self::assertSame(['burgruine'], $expander->expand('Ruine'));
+    }
+
+    public function testTheSubstringSearchStillBringsWhatTheAnalysisMisses(): void
+    {
+        // Gemessen: das Woerterbuch kennt "Ganerben" nicht und laesst "Ganerbenburg"
+        // deshalb ganz. Ohne das Auffuellen ginge der Treffer verloren.
+        $expander = $this->expander(['Burg' => 9, 'Ganerbenburg' => 2], ['burg' => ['Burg' => 9]]);
+
+        self::assertSame(['ganerbenburg'], $expander->expand('Burg'));
+    }
+
+    public function testAnalysedFormsPushOutTheSubstringFindingsAtTheCap(): void
+    {
+        $words = ['Xruine1' => 50, 'Xruine2' => 40];
+        $forms = ['ruin' => ['Burgruine' => 1]];
+
+        // Obwohl die Teilstring-Treffer um ein Vielfaches haeufiger sind, bleibt bei
+        // einer Form Platz nur fuer die analysierte.
+        self::assertSame(['burgruine'], $this->expander($words, $forms)->expand('Ruine', [], [], 1));
+    }
+
+    /**
+     * Eine Sprache, zu der es keine Analyse gibt, darf nicht dazu fuehren, dass gar nichts
+     * mehr erweitert wird: dann gilt das Verhalten von vorher.
+     */
+    public function testWithoutAnAnalysisTheSubstringSearchAloneIsUsed(): void
+    {
+        $expander = $this->expander(['Ruine' => 4, 'Burgruine' => 3], [], []);
+
+        self::assertSame(['burgruine'], $expander->expand('Ruine'));
     }
 
     public function testAWordInTheMiddleIsFoundWhichThePrefixSearchCannotDo(): void

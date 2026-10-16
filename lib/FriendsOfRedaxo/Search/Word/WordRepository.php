@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace FriendsOfRedaxo\Search\Word;
 
+use FriendsOfRedaxo\Search\Language;
 use rex;
 use rex_sql;
 
@@ -43,11 +44,11 @@ class WordRepository
         foreach ($collector->toArray() as $entry) {
             $batch[] = $entry;
             if (count($batch) >= self::INSERT_BATCH) {
-                $written += $this->insertBatch($collector->getSourceId(), $batch);
+                $written += $this->insertBatch($collector->getSourceId(), $collector->getLanguage(), $batch);
                 $batch = [];
             }
         }
-        $written += $this->insertBatch($collector->getSourceId(), $batch);
+        $written += $this->insertBatch($collector->getSourceId(), $collector->getLanguage(), $batch);
 
         return $written;
     }
@@ -73,12 +74,12 @@ class WordRepository
      * Woerter, die mit dem Praefix beginnen, haeufigste zuerst.
      *
      * @param list<int> $sourceIds
-     * @param list<int> $clangIds
+     * @param list<string> $languages
      * @return list<array{word: string, docs: int}>
      */
-    public function findByPrefix(string $prefix, array $sourceIds = [], array $clangIds = [], int $limit = 10): array
+    public function findByPrefix(string $prefix, array $sourceIds = [], array $languages = [], int $limit = 10): array
     {
-        return $this->find('word_folded LIKE :needle', self::escapeLike(WordFolder::fold($prefix)) . '%', $sourceIds, $clangIds, $limit);
+        return $this->find('word_folded LIKE :needle', self::escapeLike(WordFolder::fold($prefix)) . '%', $sourceIds, $languages, $limit);
     }
 
     /**
@@ -88,12 +89,12 @@ class WordRepository
      * den Groessen, um die es hier geht, kostet er gemessen rund sechs Millisekunden.
      *
      * @param list<int> $sourceIds
-     * @param list<int> $clangIds
+     * @param list<string> $languages
      * @return list<array{word: string, docs: int}>
      */
-    public function findByInfix(string $part, array $sourceIds = [], array $clangIds = [], int $limit = 10): array
+    public function findByInfix(string $part, array $sourceIds = [], array $languages = [], int $limit = 10): array
     {
-        return $this->find('word_folded LIKE :needle', '%' . self::escapeLike(WordFolder::fold($part)) . '%', $sourceIds, $clangIds, $limit);
+        return $this->find('word_folded LIKE :needle', '%' . self::escapeLike(WordFolder::fold($part)) . '%', $sourceIds, $languages, $limit);
     }
 
     /**
@@ -103,12 +104,12 @@ class WordRepository
      * in MySQL nicht, und ueber die Laenge vorzufiltern macht den Rest billig genug.
      *
      * @param list<int> $sourceIds
-     * @param list<int> $clangIds
+     * @param list<string> $languages
      * @return list<array{word: string, folded: string, docs: int}>
      */
-    public function findByLength(int $min, int $max, array $sourceIds = [], array $clangIds = [], int $limit = 20000): array
+    public function findByLength(int $min, int $max, array $sourceIds = [], array $languages = [], int $limit = 20000): array
     {
-        [$where, $params] = $this->scope($sourceIds, $clangIds);
+        [$where, $params] = $this->scope($sourceIds, $languages);
         $where[] = 'word_length BETWEEN :min AND :max';
         $params['min'] = max(1, $min);
         $params['max'] = max(1, $max);
@@ -129,9 +130,9 @@ class WordRepository
     }
 
     /**
-     * @param list<array{word: string, clang: int, docs: int}> $batch
+     * @param list<array{word: string, docs: int}> $batch
      */
-    private function insertBatch(int $sourceId, array $batch): int
+    private function insertBatch(int $sourceId, string $language, array $batch): int
     {
         if ([] === $batch) {
             return 0;
@@ -146,12 +147,12 @@ class WordRepository
             $params["f{$i}"] = $folded;
             $params["l{$i}"] = min(255, mb_strlen($entry['word']));
             $params["s{$i}"] = $sourceId;
-            $params["c{$i}"] = $entry['clang'];
+            $params["c{$i}"] = $language;
             $params["d{$i}"] = $entry['docs'];
         }
 
         rex_sql::factory()->setQuery(
-            'INSERT INTO ' . self::table() . ' (word, word_folded, word_length, source_id, clang_id, docs)'
+            'INSERT INTO ' . self::table() . ' (word, word_folded, word_length, source_id, language, docs)'
             . ' VALUES ' . implode(', ', $values),
             $params,
         );
@@ -161,12 +162,12 @@ class WordRepository
 
     /**
      * @param list<int> $sourceIds
-     * @param list<int> $clangIds
+     * @param list<string> $languages
      * @return list<array{word: string, docs: int}>
      */
-    private function find(string $condition, string $needle, array $sourceIds, array $clangIds, int $limit): array
+    private function find(string $condition, string $needle, array $sourceIds, array $languages, int $limit): array
     {
-        [$where, $params] = $this->scope($sourceIds, $clangIds);
+        [$where, $params] = $this->scope($sourceIds, $languages);
         $where[] = $condition;
         $params['needle'] = $needle;
 
@@ -188,15 +189,17 @@ class WordRepository
     /**
      * Einschraenkung auf Quellen und Sprachen.
      *
-     * Bei der Sprache wird die 0 immer mitgenommen: Dokumente aus dem Medienpool und
-     * YForm-Datensaetze haben keine Sprache, sie wuerden sonst aus jeder sprachbezogenen
-     * Suche fallen.
+     * Bei der Sprache werden Quellen ohne Angabe immer mitgenommen: sie wuerden sonst aus
+     * jeder sprachbezogenen Suche fallen, und auf einer Installation, auf der niemand eine
+     * Sprache eingetragen hat, bliebe die Wortliste wirkungslos. Dass das vorher der
+     * Regelfall war -- Medien und YForm hatten nie einen clang --, ist der Unterschied:
+     * jetzt ist es eine Entscheidung und kein Zustand.
      *
      * @param list<int> $sourceIds
-     * @param list<int> $clangIds
+     * @param list<string> $languages
      * @return array{list<string>, array<string, mixed>}
      */
-    private function scope(array $sourceIds, array $clangIds): array
+    private function scope(array $sourceIds, array $languages): array
     {
         $where = [];
         $params = [];
@@ -210,14 +213,13 @@ class WordRepository
             $where[] = 'source_id IN (' . implode(', ', $names) . ')';
         }
 
-        if ([] !== $clangIds) {
+        if ([] !== $languages) {
             $names = [];
-            $values = in_array(0, $clangIds, true) ? $clangIds : [...$clangIds, 0];
-            foreach (array_values($values) as $i => $id) {
-                $names[] = ':cl' . $i;
-                $params['cl' . $i] = $id;
+            foreach (array_values(self::withUnknown($languages)) as $i => $language) {
+                $names[] = ':lang' . $i;
+                $params['lang' . $i] = $language;
             }
-            $where[] = 'clang_id IN (' . implode(', ', $names) . ')';
+            $where[] = 'language IN (' . implode(', ', $names) . ')';
         }
 
         if ([] === $where) {
@@ -225,6 +227,17 @@ class WordRepository
         }
 
         return [$where, $params];
+    }
+
+    /**
+     * Die Sprachen samt der leeren -- Quellen ohne Angabe gehoeren in jede Auswahl.
+     *
+     * @param list<string> $languages
+     * @return list<string>
+     */
+    public static function withUnknown(array $languages): array
+    {
+        return in_array(Language::UNKNOWN, $languages, true) ? $languages : [...$languages, Language::UNKNOWN];
     }
 
     /**

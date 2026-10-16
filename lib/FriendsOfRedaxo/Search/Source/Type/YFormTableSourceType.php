@@ -6,17 +6,20 @@ namespace FriendsOfRedaxo\Search\Source\Type;
 
 use DateTimeImmutable;
 use FriendsOfRedaxo\Search\Document\IndexDocument;
+use FriendsOfRedaxo\Search\Language;
 use FriendsOfRedaxo\Search\Source\ConfigField;
 use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceType;
 use FriendsOfRedaxo\Search\Text;
 use rex;
 use rex_addon;
+use rex_clang;
 use rex_i18n;
 use rex_sql;
 use rex_yform_manager_table;
 use Throwable;
 
+use function in_array;
 use function is_scalar;
 use function is_string;
 use function strlen;
@@ -82,7 +85,109 @@ final class YFormTableSourceType extends SourceType
             $errors['table'] = rex_i18n::msg('search_yform_table_missing', $tableName);
         }
 
+        $mixed = self::findMixedLanguageFields($config);
+        if (null !== $mixed) {
+            $errors['fields'] = rex_i18n::msg('search_yform_fields_mixed', $mixed[0], $mixed[1]);
+        }
+
         return $errors;
+    }
+
+    /**
+     * Zwei gewaehlte Felder, die dasselbe in verschiedenen Sprachen enthalten.
+     *
+     * YForm-Tabellen fuehren Uebersetzungen ueblicherweise als Spalten nebeneinander:
+     * "description", "description_en", "description_no". Alle drei in eine Quelle zu
+     * nehmen ergibt ein Dokument mit drei Sprachen darin, und das ist der eine Fall, der
+     * sich nachtraeglich nicht mehr aufloesen laesst -- welches Wort zu welcher Sprache
+     * gehoert, steht danach nirgends mehr. Stammformen und Zerlegung waeren fuer zwei
+     * Drittel des Textes falsch.
+     *
+     * Deshalb hier eine Absage statt eines Hinweises. Der Weg ist eine Quelle je Sprache
+     * auf dieselbe Tabelle, jede mit ihren Feldern und ihrer Sprachangabe.
+     *
+     * Erkannt wird an der Endung, nicht am Inhalt: zwei Felder, die sich nur um ein
+     * angehaengtes Sprachkuerzel unterscheiden. Beruecksichtigt werden die Sprachen des
+     * AddOns und die Sprachcodes der Installation, damit auch eine Eigenheit wie "_at"
+     * auffaellt.
+     *
+     * @param array<string, mixed> $config
+     * @param list<string>|null $clangCodes Nur fuer Tests: sonst die Codes der Installation
+     * @return array{string, string}|null
+     */
+    public static function findMixedLanguageFields(array $config, ?array $clangCodes = null): ?array
+    {
+        $fields = [];
+        foreach ((array) ($config['fields'] ?? []) as $field) {
+            if (is_string($field) && '' !== $field) {
+                $fields[] = $field;
+            }
+        }
+        $titleField = (string) ($config['title_field'] ?? '');
+        if ('' !== $titleField && !in_array($titleField, $fields, true)) {
+            $fields[] = $titleField;
+        }
+
+        $suffixes = self::languageSuffixes($clangCodes);
+        $bases = [];
+        foreach ($fields as $field) {
+            $base = $field;
+            foreach ($suffixes as $suffix) {
+                if (str_ends_with($field, $suffix) && strlen($field) > strlen($suffix)) {
+                    $base = substr($field, 0, -strlen($suffix));
+                    break;
+                }
+            }
+            if (isset($bases[$base])) {
+                return [$bases[$base], $field];
+            }
+            $bases[$base] = $field;
+        }
+
+        return null;
+    }
+
+    /**
+     * Endungen, die ein Feld als Sprachfassung ausweisen, laengste zuerst.
+     *
+     * Die Reihenfolge ist noetig: bei "_de_de" wuerde sonst "_de" greifen und als Grundname
+     * "name_de" uebrigbleiben, womit "name_de_de" und "name_en_en" verschieden waeren.
+     *
+     * @param list<string>|null $clangCodes
+     * @return list<string>
+     */
+    private static function languageSuffixes(?array $clangCodes = null): array
+    {
+        $codes = Language::codes();
+        foreach ($clangCodes ?? self::clangCodes() as $code) {
+            $codes[] = $code;
+        }
+
+        $suffixes = [];
+        foreach (array_unique($codes) as $code) {
+            $suffixes[] = '_' . $code;
+        }
+        usort($suffixes, static fn (string $a, string $b): int => strlen($b) <=> strlen($a));
+
+        return $suffixes;
+    }
+
+    /**
+     * Die Sprachcodes der Installation, kleingeschrieben.
+     *
+     * @return list<string>
+     */
+    private static function clangCodes(): array
+    {
+        $codes = [];
+        foreach (rex_clang::getAll() as $clang) {
+            $code = strtolower(trim($clang->getCode()));
+            if ('' !== $code && preg_match('/^[a-z0-9_-]{2,5}$/', $code)) {
+                $codes[] = $code;
+            }
+        }
+
+        return $codes;
     }
 
     public function getType(Source $source): string

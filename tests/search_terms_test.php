@@ -62,4 +62,31 @@ final class rex_search_search_terms_test extends TestCase
 
         self::assertSame('+Burg* +Schloss*', $terms->expression);
     }
+
+    public function testAnExpandedExpressionKnowsItsPlainForm(): void
+    {
+        $terms = new SearchTerms(['ruine'], [], ['ruine' => ['burgruine']]);
+
+        self::assertTrue($terms->isExpanded());
+        self::assertSame('+(ruine* burgruine)', $terms->expression);
+        self::assertSame('+ruine*', $terms->getPlainExpression());
+    }
+
+    public function testWithoutFormsTheExpressionIsAlreadyThePlainOne(): void
+    {
+        $terms = new SearchTerms(['ruine', 'burg']);
+
+        self::assertFalse($terms->isExpanded());
+        self::assertSame($terms->expression, $terms->getPlainExpression());
+    }
+
+    /**
+     * Ein leerer Eintrag ist keine Erweiterung. Sonst baute die Suche eine zweite,
+     * ueberfluessige Volltextabfrage auf, nur um festzustellen, dass alle Treffer direkte
+     * sind.
+     */
+    public function testAnEmptyFormListDoesNotCountAsExpanded(): void
+    {
+        self::assertFalse((new SearchTerms(['ruine'], [], ['ruine' => []]))->isExpanded());
+    }
 }

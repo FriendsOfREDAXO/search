@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace FriendsOfRedaxo\Search\Word;
 
+use FriendsOfRedaxo\Search\Analysis\Analyzer;
+
 use function count;
 use function in_array;
 
@@ -42,42 +44,44 @@ final class WordExpander
 
     private readonly WordRepository $words;
 
-    public function __construct(?WordRepository $words = null)
+    private readonly WordFormRepository $forms;
+
+    public function __construct(?WordRepository $words = null, ?WordFormRepository $forms = null)
     {
         $this->words = $words ?? new WordRepository();
+        $this->forms = $forms ?? new WordFormRepository();
     }
 
     /**
-     * Zusaetzliche Formen zu einem Wort: Wortanfang und enthaltene Teile.
+     * Zusaetzliche Formen zu einem Wort: erst die analysierten, dann enthaltene Teile.
      *
-     * Der Wortanfang kommt zuerst, weil "+wort*" im Volltextindex ohnehin schon so sucht --
-     * gefragt ist hier vor allem, was der Index nicht kann: die Form in der Wortmitte.
+     * Die Reihenfolge ist das Entscheidende. Die Analyse liefert die gemeinten Verwandten:
+     * "Ruine" fuehrt ueber den Stamm zu "Ruinen" und ueber die Zerlegung zu "Burgruine",
+     * waehrend "Hamburg" und "Einbuergerung" draussen bleiben. Sie findet dafuer nicht
+     * alles -- gemessen faellt bei "Burg" unter anderem "Ganerbenburg" durch, weil das
+     * Woerterbuch den ersten Teil nicht kennt. Deshalb wird mit der Suche nach enthaltenen
+     * Teilen aufgefuellt: sie bringt den Rest, und weil die guten Formen schon vorne
+     * stehen, landet ihr Beifang bei der Begrenzung als Erstes unter dem Strich.
+     *
+     * Ohne Analyse -- Quelle ohne Sprachangabe, fehlende Bibliothek -- bleibt genau das
+     * Verhalten von vorher.
      *
      * @param list<int> $sourceIds
-     * @param list<int> $clangIds
+     * @param list<string> $languages
      * @return list<string>
      */
-    public function expand(string $word, array $sourceIds = [], array $clangIds = [], int $max = self::MAX_FORMS): array
+    public function expand(string $word, array $sourceIds = [], array $languages = [], int $max = self::MAX_FORMS): array
     {
         if (mb_strlen($word) < self::MIN_INFIX_LENGTH) {
             return [];
         }
 
-        $forms = [];
         $folded = WordFolder::fold($word);
+        $forms = [];
 
-        foreach ($this->words->findByInfix($word, $sourceIds, $clangIds, $max * 3) as $row) {
-            $candidate = WordFolder::fold($row['word']);
-            // Was schon mit "+wort*" gefunden wird, muss nicht zusaetzlich aufgezaehlt werden.
-            if ($candidate === $folded || str_starts_with($candidate, $folded)) {
-                continue;
-            }
-            if (!in_array($candidate, $forms, true)) {
-                $forms[] = $candidate;
-            }
-            if (count($forms) >= $max) {
-                break;
-            }
+        $this->take($forms, $this->analyzed($word, $sourceIds, $languages, $max), $folded, $max);
+        if (count($forms) < $max) {
+            $this->take($forms, $this->words->findByInfix($word, $sourceIds, $languages, $max * 3), $folded, $max);
         }
 
         return $forms;
@@ -90,9 +94,9 @@ final class WordExpander
      * Tippfehler auf einem Umlaut kostet sonst zwei statt einem Schritt.
      *
      * @param list<int> $sourceIds
-     * @param list<int> $clangIds
+     * @param list<string> $languages
      */
-    public function correct(string $word, array $sourceIds = [], array $clangIds = []): ?string
+    public function correct(string $word, array $sourceIds = [], array $languages = []): ?string
     {
         $max = self::maxDistance($word);
         if (0 === $max) {
@@ -106,7 +110,7 @@ final class WordExpander
         $besterAbstand = $max + 1;
         $besteHaeufigkeit = 0;
 
-        foreach ($this->words->findByLength($length - $max, $length + $max, $sourceIds, $clangIds) as $row) {
+        foreach ($this->words->findByLength($length - $max, $length + $max, $sourceIds, $languages) as $row) {
             if ($row['folded'] === $folded) {
                 // Das Wort gibt es. Dann war es kein Tippfehler.
                 return null;
@@ -139,5 +143,77 @@ final class WordExpander
         }
 
         return self::DISTANCE_MAX;
+    }
+
+    /**
+     * Woerter, die mit dem eingegebenen eine Nachschlageform teilen.
+     *
+     * Gefragt wird mit den Formen des eingegebenen Wortes, gebildet je Sprache: dieselbe
+     * Zeichenkette ergibt auf Deutsch und auf Englisch verschiedene Staemme, und die
+     * Formtabelle traegt deshalb die Sprache mit.
+     *
+     * @param list<int> $sourceIds
+     * @param list<string> $languages
+     * @return list<array{word: string, docs: int}>
+     */
+    private function analyzed(string $word, array $sourceIds, array $languages, int $max): array
+    {
+        $lookup = [];
+        foreach ($this->languagesToAsk($languages) as $language) {
+            foreach (Analyzer::forLanguage($language)?->forms($word) ?? [] as $form) {
+                $lookup[$form] = true;
+            }
+        }
+
+        if ([] === $lookup) {
+            return [];
+        }
+
+        return $this->forms->findByForms(array_keys($lookup), $sourceIds, $languages, $max * 3);
+    }
+
+    /**
+     * Die Sprachen, in denen nachgeschlagen wird.
+     *
+     * Ohne Einschraenkung an der Anfrage sind das die Sprachen, zu denen Formen vorliegen
+     * -- nicht alle, die das AddOn kennt. Der Unterschied ist nicht nur Laufzeit: das
+     * eingegebene Wort wuerde sonst von vierzehn Stammbildnern verschieden verstuemmelt,
+     * und jeder dieser Staemme suchte in der Tabelle nach Zufallstreffern.
+     *
+     * Aussortiert wird hier nichts: zu einer Sprache ohne Analyse gibt es keinen
+     * Analyzer, und die Abfrage danach faellt eine Zeile weiter von selbst aus.
+     *
+     * @param list<string> $languages
+     * @return list<string>
+     */
+    private function languagesToAsk(array $languages): array
+    {
+        return [] === $languages ? $this->forms->languages() : $languages;
+    }
+
+    /**
+     * Uebernimmt Kandidaten, bis die Obergrenze erreicht ist.
+     *
+     * Uebersprungen wird, was der Volltextindex mit "+wort*" ohnehin schon findet: das Wort
+     * selbst und alles, was damit anfaengt. Gefragt ist hier, was der Index nicht kann --
+     * die Form in der Wortmitte und die gebeugte Form mit anderem Wortanfang.
+     *
+     * @param list<string> $forms
+     * @param list<array{word: string, docs: int}> $candidates
+     */
+    private function take(array &$forms, array $candidates, string $folded, int $max): void
+    {
+        foreach ($candidates as $row) {
+            if (count($forms) >= $max) {
+                return;
+            }
+            $candidate = WordFolder::fold($row['word']);
+            if ($candidate === $folded || str_starts_with($candidate, $folded)) {
+                continue;
+            }
+            if (!in_array($candidate, $forms, true)) {
+                $forms[] = $candidate;
+            }
+        }
     }
 }

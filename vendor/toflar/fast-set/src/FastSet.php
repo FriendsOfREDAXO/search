@@ -1,0 +1,221 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Toflar\FastSet;
+
+final class FastSet
+{
+    /**
+     * Very small buckets are faster to scan linearly than to binary-search.
+     *
+     * With a 16-bit prefix, a lot of datasets end up with tiny buckets most of the time,
+     * so avoiding the extra branching of binary search wins in practice.
+     */
+    private const LINEAR_SCAN_THRESHOLD = 8;
+
+    private readonly string $hashesPath;
+
+    private readonly string $indexPath;
+
+    private readonly int $fingerprintByteLength;
+
+    private readonly int $storedTailByteLength;
+
+    private bool $isInitialized = false;
+
+    private string $hashesBlob = '';
+
+    /**
+     * Prefix → start-offset lookup table for the sorted fingerprint blob.
+     *
+     * Fingerprints are stored sorted (binary order) in `hashes.bin`.
+     * We bucket them by their first 2 bytes (a 16-bit prefix key in the range 0..65535).
+     *
+     * For each prefix key `p`, this blob stores the starting index (not the byte offset)
+     * of that bucket within the sorted fingerprint list. This defines the low of our
+     * bucket. For the high, we need to take `p + 1`.
+     *
+     * This is why the table has 65537 entries: one extra "placeholder" entry at the end
+     * containing the offset after the last fingerprint, so `p + 1` is always defined.
+     */
+    private string $indexBlob = '';
+
+    public function __construct(
+        private readonly string $directory,
+        private readonly string $hashAlgorithm = 'xxh3',
+    ) {
+        if (!is_dir($this->directory)) {
+            throw new \InvalidArgumentException('Directory does not exist.');
+        }
+
+        if (!\in_array($this->hashAlgorithm, ['xxh3', 'xxh128'], true)) {
+            throw new \LogicException(\sprintf('Unsupported hash algorithm "%s". Use "xxh3" or "xxh128".', $this->hashAlgorithm));
+        }
+
+        if (!\in_array($this->hashAlgorithm, hash_algos(), true)) {
+            throw new \LogicException('Desired hash algorithm is not available.');
+        }
+
+        $this->fingerprintByteLength = 'xxh128' === $this->hashAlgorithm ? 16 : 8;
+        $this->storedTailByteLength = $this->fingerprintByteLength - 2;
+
+        $this->indexPath = $this->directory.'/index_'.$this->hashAlgorithm.'.bin';
+        $this->hashesPath = $this->directory.'/hashes_'.$this->hashAlgorithm.'.bin';
+    }
+
+    public function has(string $entry): bool
+    {
+        if ('' === $entry) {
+            return false;
+        }
+
+        $this->initialize();
+
+        $fingerprint = $this->getFingerPrintForEntry($entry);
+
+        $prefixKey = $this->getPrefixKey($fingerprint);
+
+        // Restrict search to the bucket range [startIndex, endIndex]
+        $byteOffset = $prefixKey * 4;
+        $values = unpack('V2', substr($this->indexBlob, $byteOffset, 8));
+        $startIndex = $values[1];
+        $endIndex = $values[2];
+
+        // Empty bucket -> definitely not present
+        if ($startIndex >= $endIndex) {
+            return false;
+        }
+
+        $queryFingerprintTailBytes = substr($fingerprint, 2, $this->storedTailByteLength);
+        $bucketSize = $endIndex - $startIndex;
+
+        if ($bucketSize <= self::LINEAR_SCAN_THRESHOLD) {
+            // Avoid creating intermediate substrings for the common case where the bucket
+            // only contains a handful of entries.
+            for ($index = $startIndex; $index < $endIndex; ++$index) {
+                if (0 === substr_compare($this->hashesBlob, $queryFingerprintTailBytes, $index * $this->storedTailByteLength, $this->storedTailByteLength)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // Binary search within that bucket
+        $low = $startIndex;
+        $high = $endIndex - 1;
+
+        while ($low <= $high) {
+            $mid = $low + $high >> 1;
+
+            $middleTailByteOffset = $mid * $this->storedTailByteLength;
+            $cmp = substr_compare($this->hashesBlob, $queryFingerprintTailBytes, $middleTailByteOffset, $this->storedTailByteLength);
+            if (0 === $cmp) {
+                return true;
+            }
+
+            if ($cmp < 0) {
+                $low = $mid + 1;
+            } else {
+                $high = $mid - 1;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * The source path must be a file built using the SetBuilder.
+     */
+    public function build(string $sourcePath): void
+    {
+        $fingerPrints = [];
+
+        SetBuilder::readSet(
+            $sourcePath,
+            function (string $entry) use (&$fingerPrints): void {
+                $fingerPrints[] = $this->getFingerPrintForEntry($entry);
+            },
+        );
+
+        // Sort all fingerprints so we can binary-search them later
+        sort($fingerPrints, SORT_STRING);
+
+        // For each possible 2-byte prefix (0..65535), count how many fingerprints start with that prefix.
+        // This lets us build a prefix -> [start, end] lookup table.
+        $prefixCounts = array_fill(0, 65536, 0);
+
+        $hashFile = $this->openFileHandleForWriting($this->hashesPath);
+
+        foreach ($fingerPrints as $fingerprint) {
+            $prefixKey = $this->getPrefixKey($fingerprint);
+            ++$prefixCounts[$prefixKey];
+
+            // Skip the first 2 bytes in our hashes.bin - they are already part of the index.bin
+            // so we can save 2 bytes per fingerprint to reduce our memory footprint even more
+            fwrite($hashFile, substr($fingerprint, 2, $this->storedTailByteLength));
+        }
+
+        fclose($hashFile);
+
+        // Build the prefix index
+        $indexFile = $this->openFileHandleForWriting($this->indexPath);
+        $currentOffset = 0;
+
+        for ($prefix = 0; $prefix < 65536; ++$prefix) {
+            // Write starting index for this prefix
+            fwrite($indexFile, pack('V', $currentOffset));
+            // Advance by the number of fingerprints in this bucket
+            $currentOffset += $prefixCounts[$prefix];
+        }
+
+        // Final placeholder entry: start offset after the last prefix
+        fwrite($indexFile, pack('V', $currentOffset));
+        fclose($indexFile);
+    }
+
+    public function initialize(): void
+    {
+        if ($this->isInitialized) {
+            return;
+        }
+
+        $hashesBlob = @file_get_contents($this->hashesPath);
+        $indexBlob = @file_get_contents($this->indexPath);
+
+        if (false === $hashesBlob || false === $indexBlob) {
+            throw new \RuntimeException('Hashes or index files do not exist.');
+        }
+
+        $this->hashesBlob = $hashesBlob;
+        $this->indexBlob = $indexBlob;
+        $this->isInitialized = true;
+    }
+
+    /**
+     * Use the first 2 bytes of the fingerprint as prefix bucket key.
+     */
+    public function getPrefixKey(string $fingerprint): int
+    {
+        return (\ord($fingerprint[0]) << 8) | \ord($fingerprint[1]);
+    }
+
+    private function getFingerPrintForEntry(string $entry): string
+    {
+        return hash($this->hashAlgorithm, $entry, true);
+    }
+
+    /**
+     * @return resource
+     */
+    private function openFileHandleForWriting(string $filePath)
+    {
+        $handle = fopen($filePath, 'w');
+        if (false === $handle) {
+            throw new \RuntimeException(\sprintf('Cannot open "%s" for writing.', $filePath));
+        }
+
+        return $handle;
+    }
+}

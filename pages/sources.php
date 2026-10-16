@@ -4,6 +4,7 @@ use FriendsOfRedaxo\Search\Backend\ConfigFormRenderer;
 use FriendsOfRedaxo\Search\Index\Indexer;
 use FriendsOfRedaxo\Search\Index\IndexFilterRegistry;
 use FriendsOfRedaxo\Search\Index\IndexRepository;
+use FriendsOfRedaxo\Search\Language;
 use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
 use FriendsOfRedaxo\Search\Source\SourceTypeRegistry;
@@ -381,7 +382,25 @@ $list->setColumnFormat('type_key', 'custom', static function (array $params) use
         . '<br><small><code>' . rex_escape($type->getNamespace()) . '</code> / <code>' . rex_escape($type->getType($source)) . '</code></small>';
 });
 
-$list->addColumn('index_id_pattern', '', 4);
+$list->addColumn('language', '', 4);
+$list->setColumnLabel('language', $addon->i18n('search_source_language'));
+$list->setColumnFormat('language', 'custom', static function (array $params) use ($addon, $sourcesById) {
+    /** @var rex_list $list */
+    $list = $params['list'];
+    $source = $sourcesById[(int) $list->getValue('id')] ?? null;
+    if (null === $source) {
+        return '';
+    }
+    // Eine Quelle ohne Sprache wird durchsucht, aber nicht analysiert. Das faellt sonst
+    // nirgends auf, deshalb steht es in der Liste und nicht nur auf der Einstellungsseite.
+    $language = $source->getLanguage();
+
+    return Language::UNKNOWN === $language
+        ? '<span class="text-warning"><i class="rex-icon fa-exclamation-triangle"></i> ' . $addon->i18n('search_source_language_missing') . '</span>'
+        : rex_escape(Language::label($language));
+});
+
+$list->addColumn('index_id_pattern', '', 5);
 $list->setColumnLabel('index_id_pattern', $addon->i18n('status_index_id_pattern'));
 $list->setColumnFormat('index_id_pattern', 'custom', static function (array $params) use ($sourcesById) {
     /** @var rex_list $list */
@@ -392,7 +411,7 @@ $list->setColumnFormat('index_id_pattern', 'custom', static function (array $par
     return null === $source || null === $type ? '' : '<code>' . rex_escape($type->getIndexIdPattern($source)) . '</code>';
 });
 
-$list->addColumn('description', '', 5);
+$list->addColumn('description', '', 6);
 $list->setColumnLabel('description', $addon->i18n('source_description'));
 $list->setColumnFormat('description', 'custom', static function (array $params) use ($sourcesById) {
     /** @var rex_list $list */
@@ -403,7 +422,7 @@ $list->setColumnFormat('description', 'custom', static function (array $params) 
     return null === $source || null === $type ? '' : rex_escape($type->describe($source));
 });
 
-$list->addColumn('filters', '', 6);
+$list->addColumn('filters', '', 7);
 $list->setColumnLabel('filters', $addon->i18n('source_filters'));
 $list->setColumnFormat('filters', 'custom', static function (array $params) use ($addon, $sourcesById) {
     /** @var rex_list $list */

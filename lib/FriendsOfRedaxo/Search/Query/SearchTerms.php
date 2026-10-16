@@ -77,6 +77,31 @@ final class SearchTerms
         return '' === $this->expression;
     }
 
+    /**
+     * Wurde der Ausdruck um verwandte Formen erweitert?
+     */
+    public function isExpanded(): bool
+    {
+        foreach ($this->expansions as $forms) {
+            if ([] !== $forms) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Der Ausdruck ohne die zusaetzlichen Formen -- nur das, was eingegeben wurde.
+     *
+     * Damit laesst sich unterscheiden, ob ein Treffer auch ohne Erweiterung gekommen
+     * waere, siehe ScoreExpression::directMatch().
+     */
+    public function getPlainExpression(): string
+    {
+        return self::build($this->words, []);
+    }
+
     public function countWords(): int
     {
         return count($this->words);

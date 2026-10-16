@@ -125,4 +125,29 @@ final class rex_search_score_expression_test extends TestCase
 
         self::assertSame('"burg eppstein" @5', $expression->getParams()['term_proximity']);
     }
+
+    public function testWithoutAnExpansionThereIsNoSecondMatch(): void
+    {
+        $expression = new ScoreExpression(SearchQuery::create('burg'), new SearchTerms(['burg']));
+        $expression->build();
+
+        self::assertSame('', $expression->directMatch());
+        self::assertArrayNotHasKey('term_direct', $expression->getParams());
+    }
+
+    /**
+     * Die Vorsortierung fragt nach dem eingegebenen Wort allein. Faende sie mit dem
+     * erweiterten Ausdruck, waere jeder Treffer ein direkter und die Unterscheidung
+     * wirkungslos.
+     */
+    public function testTheDirectMatchAsksForTheTypedWordAlone(): void
+    {
+        $terms = new SearchTerms(['ruine'], [], ['ruine' => ['burgruine']]);
+        $expression = new ScoreExpression(SearchQuery::create('ruine'), $terms);
+        $expression->build();
+
+        self::assertStringContainsString(':term_direct', $expression->directMatch());
+        self::assertSame('+ruine*', $expression->getParams()['term_direct']);
+        self::assertStringEndsWith('> 0)', $expression->directMatch());
+    }
 }

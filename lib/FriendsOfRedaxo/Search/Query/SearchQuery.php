@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace FriendsOfRedaxo\Search\Query;
 
+use FriendsOfRedaxo\Search\Language;
+
 use function array_slice;
 use function count;
 
@@ -28,7 +30,7 @@ final class SearchQuery
     public const DEFAULT_LIMIT = 20;
 
     /** Nur diese Spalten lassen sich als Facette auszaehlen. */
-    public const FACET_COLUMNS = ['namespace', 'type', 'source_id', 'clang_id'];
+    public const FACET_COLUMNS = ['namespace', 'type', 'source_id', 'clang_id', 'language'];
 
     /** Obergrenze fuer die Trefferliste, bevor die Seite herausgeschnitten wird. */
     public const DEFAULT_CANDIDATE_LIMIT = 2000;
@@ -67,6 +69,9 @@ final class SearchQuery
 
     /** @var list<int> */
     private array $clangIds = [];
+
+    /** @var list<string> */
+    private array $languages = [];
 
     private int $limit = self::DEFAULT_LIMIT;
 
@@ -134,6 +139,12 @@ final class SearchQuery
     public function getClangIds(): array
     {
         return $this->clangIds;
+    }
+
+    /** @return list<string> */
+    public function getLanguages(): array
+    {
+        return $this->languages;
     }
 
     public function getLimit(): int
@@ -242,6 +253,28 @@ final class SearchQuery
     {
         $clone = clone $this;
         $clone->clangIds = array_values(array_unique($clangIds));
+
+        return $clone;
+    }
+
+    /**
+     * Nur Dokumente dieser Sprachen durchsuchen.
+     *
+     * Das ist nicht dasselbe wie {@see withClangIds()}: der clang sagt, in welchem
+     * Sprachzweig der Struktur ein Artikel steht, die Sprache, in welcher Sprache ein
+     * Dokument verfasst ist. Medien und YForm-Datensaetze haben keinen clang, aber sehr
+     * wohl eine Sprache, und mehrere clangs koennen dieselbe Sprache sein.
+     *
+     * Quellen ohne Sprachangabe bleiben aussen vor -- wer nach Sprache filtert, will keine
+     * Dokumente, von denen niemand weiss, in welcher sie sind. Bei der Wortliste ist es
+     * umgekehrt, siehe WordRepository::withUnknown(): dort geht es nicht um die Treffer,
+     * sondern um Vorschlaege, und ein Vorschlag zu viel schadet weniger als eine
+     * Trefferliste, die Fremdes enthaelt.
+     */
+    public function withLanguages(string ...$languages): self
+    {
+        $clone = clone $this;
+        $clone->languages = array_values(array_unique(array_map(Language::normalize(...), $languages)));
 
         return $clone;
     }
@@ -406,6 +439,7 @@ final class SearchQuery
         $this->namespaces = $other->namespaces;
         $this->types = $other->types;
         $this->clangIds = $other->clangIds;
+        $this->languages = $other->languages;
         $this->limit = $other->limit;
         $this->offset = $other->offset;
         $this->grouped = $other->grouped;
@@ -437,6 +471,7 @@ final class SearchQuery
             'namespace' => $this->namespaces,
             'type' => $this->types,
             'clang_id' => $this->clangIds,
+            'language' => $this->languages,
         ] as $column => $values) {
             if ([] !== $values) {
                 // Mehr Werte als Zeilen im Index waere ein Programmierfehler, aber die Abfrage

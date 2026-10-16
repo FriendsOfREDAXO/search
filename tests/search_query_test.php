@@ -109,4 +109,41 @@ final class rex_search_search_query_test extends TestCase
         self::assertSame(0.4, $other->getMinRelevance());
         self::assertSame(7, $other->getProximityDistance());
     }
+
+    public function testLanguagesBecomeAFilterOfTheirOwnBesideTheClang(): void
+    {
+        $query = SearchQuery::create('burg')->withLanguages('de', 'en')->withClangIds(1);
+
+        self::assertSame(['de', 'en'], $query->getLanguages());
+        self::assertSame(['clang_id' => [1], 'language' => ['de', 'en']], $query->getFilters());
+    }
+
+    /**
+     * Was hereinkommt, ist oft ein REDAXO-Sprachcode und kein ISO-Code. Unbekanntes wird
+     * zur leeren Angabe -- die trifft dann Quellen ohne Sprache, was ehrlicher ist, als
+     * stillschweigend alles durchzulassen.
+     */
+    public function testLanguagesAreNormalizedAndDeduplicated(): void
+    {
+        $query = SearchQuery::create('burg')->withLanguages('de_de', 'DE', 'de-CH');
+
+        self::assertSame(['de'], $query->getLanguages());
+    }
+
+    public function testWithoutLanguagesNoLanguageFilterIsBuilt(): void
+    {
+        self::assertArrayNotHasKey('language', SearchQuery::create('burg')->getFilters());
+    }
+
+    public function testTheLanguageSurvivesANewTerm(): void
+    {
+        $query = SearchQuery::create('burg')->withLanguages('de')->withTerm('ruine');
+
+        self::assertSame(['de'], $query->getLanguages());
+    }
+
+    public function testTheLanguageCanBeCountedAsAFacet(): void
+    {
+        self::assertSame(['language'], SearchQuery::create('burg')->withFacets('language')->getFacets());
+    }
 }

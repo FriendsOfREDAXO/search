@@ -1,5 +1,6 @@
 <?php
 
+use FriendsOfRedaxo\Search\Language;
 use FriendsOfRedaxo\Search\Query\Searcher;
 use FriendsOfRedaxo\Search\Query\SearchQuery;
 use FriendsOfRedaxo\Search\Query\SearchTerms;
@@ -11,6 +12,18 @@ $sources = (new SourceRepository())->findAll();
 $query = trim(rex_request('q', 'string'));
 $page = max(1, rex_request('p', 'int', 1));
 $selectedSourceIds = array_values(array_filter(array_map('intval', rex_request('sources', 'array', [])), static fn (int $id): bool => $id > 0));
+$selectedLanguage = Language::normalize(rex_request('lang', 'string'));
+
+// Nur die Sprachen zur Auswahl stellen, die auch vorkommen -- eine Liste aus vierzehn
+// Eintraegen, von denen dreizehn nichts finden, waere keine Hilfe.
+$usedLanguages = [];
+foreach ($sources as $source) {
+    $language = $source->getLanguage();
+    if (Language::UNKNOWN !== $language) {
+        $usedLanguages[$language] = Language::label($language);
+    }
+}
+ksort($usedLanguages);
 
 $sourceSelect = new rex_select();
 $sourceSelect->setName('sources[]');
@@ -27,8 +40,7 @@ foreach ($sources as $source) {
 }
 $sourceSelect->setSelected(array_map('strval', $selectedSourceIds));
 
-$fragment = new rex_fragment();
-$fragment->setVar('elements', [
+$elements = [
     [
         'label' => '<label for="search-q">' . $addon->i18n('status_query') . '</label>',
         'field' => '<input class="form-control" type="text" id="search-q" name="q" value="' . rex_escape($query) . '" autofocus>',
@@ -38,7 +50,27 @@ $fragment->setVar('elements', [
         'field' => $sourceSelect->get(),
         'note' => $addon->i18n('search_sources_notice'),
     ],
-], false);
+];
+
+if ([] !== $usedLanguages) {
+    $languageSelect = new rex_select();
+    $languageSelect->setName('lang');
+    $languageSelect->setId('search-lang');
+    $languageSelect->setAttribute('class', 'form-control');
+    $languageSelect->addOption($addon->i18n('search_language_all'), '');
+    foreach ($usedLanguages as $code => $label) {
+        $languageSelect->addOption($label, $code);
+    }
+    $languageSelect->setSelected($selectedLanguage);
+    $elements[] = [
+        'label' => '<label for="search-lang">' . $addon->i18n('search_language_filter') . '</label>',
+        'field' => $languageSelect->get(),
+        'note' => $addon->i18n('search_language_filter_notice'),
+    ];
+}
+
+$fragment = new rex_fragment();
+$fragment->setVar('elements', $elements, false);
 $body = $fragment->parse('core/form/form.php');
 
 $fragment = new rex_fragment();
@@ -48,12 +80,14 @@ $fragment->setVar('elements', [
 $buttons = $fragment->parse('core/form/submit.php');
 
 if ('' !== $query) {
-    $result = (new Searcher())->search(
-        SearchQuery::create($query)
-            ->withSourceIds(...$selectedSourceIds)
-            ->withFacets('namespace', 'type', 'clang_id')
-            ->withPage($page, 20),
-    );
+    $search = SearchQuery::create($query)
+        ->withSourceIds(...$selectedSourceIds)
+        ->withFacets('namespace', 'type', 'language', 'clang_id')
+        ->withPage($page, 20);
+    if (Language::UNKNOWN !== $selectedLanguage) {
+        $search = $search->withLanguages($selectedLanguage);
+    }
+    $result = (new Searcher())->search($search);
 
     // Weggelassene Woerter benennen: "keine Treffer" waere hier die falsche Auskunft.
     $ignored = [];
@@ -99,10 +133,22 @@ if ('' !== $query) {
             return null === $clang ? ($id > 0 ? '#' . $id : '–') : $clang->getName();
         };
         $verteilung = [];
-        foreach (['namespace' => 'search_facet_namespace', 'type' => 'search_facet_type', 'clang_id' => 'search_facet_clang'] as $facet => $label) {
+        $facetName = static function (string $facet, string $value) use ($clangName): string {
+            if ('clang_id' === $facet) {
+                return $clangName((int) $value);
+            }
+
+            return 'language' === $facet ? Language::label($value) : $value;
+        };
+        foreach ([
+            'namespace' => 'search_facet_namespace',
+            'type' => 'search_facet_type',
+            'language' => 'search_facet_language',
+            'clang_id' => 'search_facet_clang',
+        ] as $facet => $label) {
             $werte = [];
             foreach ($result->getFacet($facet) as $wert => $anzahl) {
-                $werte[] = rex_escape('clang_id' === $facet ? $clangName((int) $wert) : (string) $wert) . ' <span class="badge">' . $anzahl . '</span>';
+                $werte[] = rex_escape($facetName($facet, (string) $wert)) . ' <span class="badge">' . $anzahl . '</span>';
             }
             if ([] !== $werte) {
                 $verteilung[] = '<dt>' . $addon->i18n($label) . '</dt><dd>' . implode(' &middot; ', $werte) . '</dd>';
@@ -138,6 +184,7 @@ if ('' !== $query) {
                 $url = rex_url::currentBackendPage([
                     'q' => $query,
                     'sources' => $selectedSourceIds,
+                    'lang' => $selectedLanguage,
                     'p' => $p,
                 ]);
                 $body .= '<li class="' . ($p === $result->getPage() ? 'active' : '') . '">'
