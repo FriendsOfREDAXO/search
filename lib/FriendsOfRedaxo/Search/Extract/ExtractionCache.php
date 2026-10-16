@@ -31,9 +31,16 @@ final class ExtractionCache
 {
     private const DIRECTORY = 'documents';
 
-    public static function key(string $filename, int $filesize, string $updatedAt, string $extractorKey, int $maxCharacters): string
+    public static function key(string $filename, int $filesize, string $updatedAt, string $extractorKey, int $maxCharacters, int $extractorVersion = 1): string
     {
-        return sha1(implode("\0", [$filename, (string) $filesize, $updatedAt, $extractorKey, (string) $maxCharacters]));
+        return sha1(implode("\0", [
+            $filename,
+            (string) $filesize,
+            $updatedAt,
+            $extractorKey,
+            (string) $extractorVersion,
+            (string) $maxCharacters,
+        ]));
     }
 
     public static function get(string $key): ?ExtractedDocument

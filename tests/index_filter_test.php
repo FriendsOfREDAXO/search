@@ -60,7 +60,7 @@ final class rex_search_demo_source_type extends SourceType
         return 'Demo';
     }
 
-    public function getConfigFields(array $config): array
+    protected function getOwnConfigFields(array $config): array
     {
         return [];
     }

@@ -52,6 +52,19 @@ abstract class DocumentExtractor
     }
 
     /**
+     * Der Stand dieses Extraktors. Wird er erhoeht, gelten alle zwischengespeicherten
+     * Ergebnisse als veraltet und die Dateien werden neu gelesen.
+     *
+     * Noetig, weil der Zwischenspeicher sonst eine Verbesserung aussperrt: nach dem
+     * Einbau der Silbentrennung lagen die alten, schlechteren Markdown-Fassungen
+     * weiterhin vor und wurden unveraendert weitergereicht.
+     */
+    public function getVersion(): int
+    {
+        return 1;
+    }
+
+    /**
      * Ob die Voraussetzungen erfuellt sind, etwa eine Bibliothek oder ein Systembefehl.
      */
     public function isAvailable(): bool

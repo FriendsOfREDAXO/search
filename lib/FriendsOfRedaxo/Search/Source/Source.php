@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Source;
 
 use DateTimeImmutable;
+use FriendsOfRedaxo\Search\Language;
 use rex_exception;
 use rex_i18n;
 
@@ -34,6 +35,18 @@ final class Source
     public function getConfig(string $key, mixed $default = null): mixed
     {
         return $this->config[$key] ?? $default;
+    }
+
+    /**
+     * Die Sprache aller Dokumente dieser Quelle, leer wenn keine angegeben ist.
+     *
+     * Sie steht in der Konfiguration und wird nirgends hergeleitet; die Begruendung steht
+     * bei {@see Language}. Normalisiert wird hier, damit ein ueber einen Extension Point
+     * oder von Hand gesetzter Wert wie "de_DE" nicht als unbekannt durchfaellt.
+     */
+    public function getLanguage(): string
+    {
+        return Language::normalize((string) $this->getConfig('language', Language::UNKNOWN));
     }
 
     public function getType(): ?SourceType

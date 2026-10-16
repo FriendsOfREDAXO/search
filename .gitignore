@@ -2,3 +2,8 @@
 /.phpunit.cache
 /.idea
 /.vscode
+
+# Testdaten der Fremdbibliotheken: 18 MB, die der Autoloader nicht anfasst.
+# Sie kommen bei "composer install" wieder, gehoeren aber nicht ins Repository.
+/vendor/wamania/php-stemmer/test/
+/vendor/toflar/fast-set/tests/

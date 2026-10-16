@@ -1,5 +1,6 @@
 <?php
 
+use FriendsOfRedaxo\Search\Analysis\Analyzer;
 use FriendsOfRedaxo\Search\Cronjob\ReindexCronjob;
 
 $addon = rex_addon::get('search');
@@ -10,6 +11,11 @@ $addon = rex_addon::get('search');
 if (is_file(__DIR__ . '/vendor/autoload.php')) {
     require_once __DIR__ . '/vendor/autoload.php';
 }
+
+// Die Wortzerlegung bereitet ihr Woerterbuch beim ersten Zugriff auf und legt das Ergebnis
+// ab. Ohne diese Angabe schriebe sie dafuer nach vendor/ -- auf einem Server mit
+// schreibgeschuetztem vendor faellt sie damit aus, und zwar lautlos.
+Analyzer::setCacheDirectory(rex_path::addonData('search', 'dictionaries'));
 
 if (rex::isBackend() && 'search' === rex_be_controller::getCurrentPagePart(1)) {
     // Cache-Buster ueber die Dateizeit, damit Aenderungen am Skript ohne Versionssprung ankommen.

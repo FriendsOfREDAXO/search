@@ -44,9 +44,9 @@ final class ArticleMetaSourceType extends AbstractArticleSourceType
         return 'meta';
     }
 
-    public function getConfigFields(array $config): array
+    protected function getOwnConfigFields(array $config): array
     {
-        $fields = parent::getConfigFields($config);
+        $fields = parent::getOwnConfigFields($config);
         $fields[] = new ConfigField(
             'fields',
             rex_i18n::msg('search_article_meta_fields'),
@@ -111,7 +111,7 @@ final class ArticleMetaSourceType extends AbstractArticleSourceType
         $titles = [];
         try {
             foreach (rex_sql::factory()->getArray('SELECT name, title FROM ' . rex::getTable('metainfo_field') . ' WHERE name LIKE "art_%" ORDER BY priority, name') as $row) {
-                $titles[(string) $row['name']] = rex_i18n::translate((string) $row['title'], false);
+                $titles[(string) $row['name']] = self::translateFieldLabel((string) $row['title']);
             }
         } catch (Throwable) {
             // metainfo nicht installiert: nur die art_*-Spalten der Artikeltabelle bleiben

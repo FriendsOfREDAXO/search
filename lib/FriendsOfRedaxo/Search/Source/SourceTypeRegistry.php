@@ -6,6 +6,7 @@ namespace FriendsOfRedaxo\Search\Source;
 
 use FriendsOfRedaxo\Search\Source\Type\ArticleContentSourceType;
 use FriendsOfRedaxo\Search\Source\Type\ArticleMetaSourceType;
+use FriendsOfRedaxo\Search\Source\Type\MediaMetaSourceType;
 use FriendsOfRedaxo\Search\Source\Type\MediaSourceType;
 use FriendsOfRedaxo\Search\Source\Type\YFormTableSourceType;
 use rex_exception;
@@ -43,6 +44,7 @@ final class SourceTypeRegistry
             new ArticleContentSourceType(),
             new ArticleMetaSourceType(),
             new MediaSourceType(),
+            new MediaMetaSourceType(),
         ];
         $types = rex_extension::registerPoint(new rex_extension_point('SEARCH_SOURCE_TYPES', $types));
 

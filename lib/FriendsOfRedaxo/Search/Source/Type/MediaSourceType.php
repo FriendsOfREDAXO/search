@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace FriendsOfRedaxo\Search\Source\Type;
 
-use DateTimeImmutable;
 use FriendsOfRedaxo\Search\Document\IndexDocument;
 use FriendsOfRedaxo\Search\Extract\DocumentExtractorRegistry;
 use FriendsOfRedaxo\Search\Extract\ExtractedDocument;
@@ -13,20 +12,15 @@ use FriendsOfRedaxo\Search\Extract\ExtractionContext;
 use FriendsOfRedaxo\Search\Markdown;
 use FriendsOfRedaxo\Search\Source\ConfigField;
 use FriendsOfRedaxo\Search\Source\Source;
-use FriendsOfRedaxo\Search\Source\SourceType;
 use FriendsOfRedaxo\Search\Text;
 use rex;
-use rex_addon;
 use rex_i18n;
 use rex_media;
-use rex_media_category;
 use rex_path;
 use rex_sql;
 use rex_url;
 
-use function array_key_exists;
 use function in_array;
-use function is_array;
 
 /**
  * Dokumente aus dem Medienpool: ein Dokument je Datei, Inhalt als Markdown.
@@ -35,16 +29,11 @@ use function is_array;
  * Typ kennt weder PDF noch Office; er waehlt die Dateien aus, haelt das Ergebnis im Cache
  * und baut daraus den Indexeintrag.
  */
-final class MediaSourceType extends SourceType
+final class MediaSourceType extends AbstractMediaSourceType
 {
     public const DEFAULT_MAX_FILESIZE_MB = 20;
 
     public function getKey(): string
-    {
-        return 'media';
-    }
-
-    public function getNamespace(): string
     {
         return 'media';
     }
@@ -59,11 +48,6 @@ final class MediaSourceType extends SourceType
         return rex_i18n::msg('search_type_media_description');
     }
 
-    public function isAvailable(): bool
-    {
-        return rex_addon::get('mediapool')->isAvailable();
-    }
-
     public function getType(Source $source): string
     {
         return 'document';
@@ -74,27 +58,14 @@ final class MediaSourceType extends SourceType
         return '{media_id}-' . $this->getType($source);
     }
 
-    public function getConfigFields(array $config): array
+    protected function getOwnConfigFields(array $config): array
     {
         $extensions = [];
         foreach (DocumentExtractorRegistry::supportedExtensions() as $extension) {
             $extensions[$extension] = '.' . $extension;
         }
 
-        $fields = [
-            new ConfigField('all_categories', rex_i18n::msg('search_media_all_categories'), ConfigField::CHECKBOX, reloadOnChange: true, default: true),
-        ];
-
-        if (!$this->isAllCategories($config)) {
-            $fields[] = new ConfigField(
-                'category_ids',
-                rex_i18n::msg('search_media_categories'),
-                ConfigField::MULTISELECT,
-                $this->getCategoryTreeOptions(),
-                rex_i18n::msg('search_media_categories_notice'),
-                required: true,
-            );
-        }
+        $fields = $this->getCategoryConfigFields($config);
 
         $fields[] = new ConfigField(
             'extensions',
@@ -141,19 +112,7 @@ final class MediaSourceType extends SourceType
 
     public function describe(Source $source): string
     {
-        $parts = [];
-
-        $categories = $this->getCategoryIds($source);
-        if ([] === $categories) {
-            $parts[] = rex_i18n::msg('search_media_all_categories');
-        } else {
-            $names = [];
-            foreach ($categories as $categoryId) {
-                $category = rex_media_category::get($categoryId);
-                $names[] = null === $category ? '#' . $categoryId : $category->getName();
-            }
-            $parts[] = rex_i18n::msg('search_media_categories') . ': ' . implode(', ', $names);
-        }
+        $parts = [$this->describeCategories($source)];
 
         $extensions = $this->getExtensions($source);
         $parts[] = [] === $extensions
@@ -241,6 +200,7 @@ final class MediaSourceType extends SourceType
             (string) $media->getValue('updatedate'),
             $extractor->getKey(),
             ExtractionContext::DEFAULT_MAX_CHARACTERS,
+            $extractor->getVersion(),
         );
 
         $cached = ExtractionCache::get($key);
@@ -312,30 +272,11 @@ final class MediaSourceType extends SourceType
         return $media->getFileName();
     }
 
-    /**
-     * Die Datensatz-ID ist die numerische Medien-ID, weil sie eine Umbenennung uebersteht.
-     * rex_media::get() nimmt dagegen den Dateinamen, deshalb der Umweg ueber eine Abfrage.
-     */
     private function resolveMedia(Source $source, string $itemId): ?rex_media
     {
-        if (!ctype_digit($itemId)) {
-            return null;
-        }
+        $media = $this->findMedia($itemId);
 
-        $rows = rex_sql::factory()->getArray(
-            'SELECT filename FROM ' . rex::getTable('media') . ' WHERE id = :id',
-            ['id' => (int) $itemId],
-        );
-        if ([] === $rows) {
-            return null;
-        }
-
-        $media = rex_media::get((string) $rows[0]['filename']);
-        if (null === $media || !$this->matches($source, $media)) {
-            return null;
-        }
-
-        return $media;
+        return null !== $media && $this->matches($source, $media) ? $media : null;
     }
 
     private function matches(Source $source, rex_media $media): bool
@@ -355,17 +296,7 @@ final class MediaSourceType extends SourceType
             return false;
         }
 
-        $categoryIds = $this->getCategoryIds($source);
-        if ([] === $categoryIds) {
-            return true;
-        }
-
-        return in_array($media->getCategoryId(), $this->collectCategoryIds($categoryIds), true);
-    }
-
-    private function readUpdatedAt(rex_media $media): DateTimeImmutable
-    {
-        return (new DateTimeImmutable())->setTimestamp($media->getUpdateDate());
+        return $this->isInSelectedCategories($source, $media);
     }
 
     /**
@@ -394,14 +325,9 @@ final class MediaSourceType extends SourceType
         $conditions[] = 'CAST(filesize AS UNSIGNED) <= :maxsize';
         $params['maxsize'] = $this->getMaxFilesize($source);
 
-        $categoryIds = $this->collectCategoryIds($this->getCategoryIds($source));
-        if ([] !== $categoryIds) {
-            $catPlaceholders = [];
-            foreach (array_values($categoryIds) as $i => $categoryId) {
-                $catPlaceholders[] = ':cat' . $i;
-                $params['cat' . $i] = $categoryId;
-            }
-            $conditions[] = 'category_id IN (' . implode(', ', $catPlaceholders) . ')';
+        $category = $this->buildCategoryCondition($source, $params);
+        if (null !== $category) {
+            $conditions[] = $category;
         }
 
         return [' WHERE ' . implode(' AND ', $conditions), $params];
@@ -430,99 +356,5 @@ final class MediaSourceType extends SourceType
         }
 
         return array_values(array_unique($extensions));
-    }
-
-    /**
-     * @return list<int>
-     */
-    private function getCategoryIds(Source $source): array
-    {
-        if ($this->isAllCategories($source->config)) {
-            return [];
-        }
-
-        $raw = $source->getConfig('category_ids', []);
-        $values = is_array($raw) ? $raw : explode(',', (string) $raw);
-
-        $ids = [];
-        foreach ($values as $id) {
-            $id = (int) trim((string) $id);
-            if ($id > 0) {
-                $ids[] = $id;
-            }
-        }
-
-        return array_values(array_unique($ids));
-    }
-
-    /**
-     * Gewaehlte Kategorien samt aller Unterkategorien.
-     *
-     * @param list<int> $categoryIds
-     * @return list<int>
-     */
-    private function collectCategoryIds(array $categoryIds): array
-    {
-        if ([] === $categoryIds) {
-            return [];
-        }
-
-        $collected = [];
-        $walk = static function (int $id) use (&$walk, &$collected): void {
-            if (isset($collected[$id])) {
-                return;
-            }
-            $collected[$id] = true;
-            $category = rex_media_category::get($id);
-            if (null === $category) {
-                return;
-            }
-            foreach ($category->getChildren() as $child) {
-                $walk($child->getId());
-            }
-        };
-        foreach ($categoryIds as $id) {
-            $walk($id);
-        }
-
-        return array_map('intval', array_keys($collected));
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     */
-    private function isAllCategories(array $config): bool
-    {
-        if (array_key_exists('all_categories', $config)) {
-            return (bool) $config['all_categories'];
-        }
-
-        $raw = $config['category_ids'] ?? [];
-
-        return is_array($raw) ? [] === array_filter($raw) : '' === trim((string) $raw);
-    }
-
-    /**
-     * Medienkategorien als flache Optionsliste, Unterkategorien eingerueckt.
-     *
-     * @return array<string, string>
-     */
-    private function getCategoryTreeOptions(): array
-    {
-        $options = [];
-        $walk = static function (array $categories, int $depth) use (&$walk, &$options): void {
-            foreach ($categories as $category) {
-                $options[(string) $category->getId()] = str_repeat('– ', $depth) . $category->getName() . ' [' . $category->getId() . ']';
-                $walk($category->getChildren(), $depth + 1);
-            }
-        };
-        $walk(rex_media_category::getRootCategories() ?? [], 0);
-
-        if ([] === $options) {
-            unset($options);
-            $options = [];
-        }
-
-        return $options;
     }
 }

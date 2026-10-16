@@ -40,7 +40,7 @@ abstract class AbstractArticleSourceType extends SourceType
         return rex_addon::get('structure')->isAvailable();
     }
 
-    public function getConfigFields(array $config): array
+    protected function getOwnConfigFields(array $config): array
     {
         $clangs = [];
         foreach (rex_clang::getAll() as $clang) {

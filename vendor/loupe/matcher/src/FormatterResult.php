@@ -1,0 +1,43 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Loupe\Matcher;
+
+use Loupe\Matcher\Tokenizer\Token;
+use Loupe\Matcher\Tokenizer\TokenCollection;
+
+class FormatterResult
+{
+    public function __construct(
+        private readonly string $formattedText,
+        private readonly TokenCollection $matches,
+    ) {
+    }
+
+    public function getFormattedText(): string
+    {
+        return $this->formattedText;
+    }
+
+    public function getMatches(): TokenCollection
+    {
+        return $this->matches;
+    }
+
+    /**
+     * @return array<int, array{start: int, length: int}>
+     */
+    public function getMatchesArray(): array
+    {
+        return array_map(static fn (Token $token) => [
+            'start' => $token->getOriginalStartPosition(),
+            'length' => $token->getOriginalLength(),
+        ], $this->matches->all());
+    }
+
+    public function hasMatches(): bool
+    {
+        return $this->matches->count() > 0;
+    }
+}

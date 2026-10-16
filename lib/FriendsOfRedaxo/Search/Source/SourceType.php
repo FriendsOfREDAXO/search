@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Source;
 
 use FriendsOfRedaxo\Search\Document\IndexDocument;
+use FriendsOfRedaxo\Search\Language;
+use rex_i18n;
 
 /**
  * Vertrag fuer einen Quellentyp.
@@ -59,7 +61,75 @@ abstract class SourceType
      * @param array<string, mixed> $config
      * @return list<ConfigField>
      */
-    abstract public function getConfigFields(array $config): array;
+    abstract protected function getOwnConfigFields(array $config): array;
+
+    /**
+     * Die Sprache voran, dann die Felder des Typs, dahinter die, die jede Quelle hat.
+     *
+     * Final, damit die gemeinsamen Felder nicht in einem Typ vergessen werden koennen --
+     * die Sprache am wenigsten: ohne sie waere die Analyse abgeschaltet, und zwar lautlos.
+     *
+     * @param array<string, mixed> $config
+     * @return list<ConfigField>
+     */
+    final public function getConfigFields(array $config): array
+    {
+        return [self::getLanguageConfigField(), ...$this->getOwnConfigFields($config), ...self::getCommonConfigFields()];
+    }
+
+    /**
+     * Die Sprache der Quelle.
+     *
+     * Pflichtfeld, und das ist der Punkt: Stammformen und Wortzerlegung sind sprachgebunden
+     * und mit der falschen Sprache falsch, abzuleiten ist die Sprache aber nirgends -- der
+     * Sprachcode einer REDAXO-Sprache ist freier Text, Medien und YForm-Datensaetze haben
+     * gar keinen clang. Wer keine angeben will oder kann, waehlt ausdruecklich "keine
+     * Angabe"; uebersehen laesst sich das Feld nicht.
+     */
+    public static function getLanguageConfigField(): ConfigField
+    {
+        return new ConfigField(
+            'language',
+            rex_i18n::msg('search_source_language'),
+            ConfigField::SELECT,
+            Language::options(),
+            rex_i18n::msg('search_source_language_notice'),
+            required: true,
+        );
+    }
+
+    /**
+     * Das Label eines Metainfo-Feldes, sofern es eines gibt.
+     *
+     * rex_i18n baut aus einem unbekannten Schluessel "[translate:name]" -- siehe
+     * getMsgFallback() im Kern. Als Auswahleintrag sieht das nach einem Fehler aus, also
+     * lieber nur den Feldnamen zeigen.
+     */
+    protected static function translateFieldLabel(string $title): string
+    {
+        $label = trim(rex_i18n::translate($title, false));
+
+        return preg_match('/^\[translate:.*\]$/', $label) ? '' : $label;
+    }
+
+    /**
+     * Felder, die jede Quelle hinter ihren eigenen hat. Die Sprache steht davor, siehe
+     * {@see getLanguageConfigField()}.
+     *
+     * @return list<ConfigField>
+     */
+    public static function getCommonConfigFields(): array
+    {
+        return [
+            new ConfigField(
+                'collect_words',
+                rex_i18n::msg('search_source_collect_words'),
+                ConfigField::CHECKBOX,
+                notice: rex_i18n::msg('search_source_collect_words_notice'),
+                default: true,
+            ),
+        ];
+    }
 
     /**
      * Fachliche Pruefung der Config, Pflichtfelder prueft das Backend selbst.

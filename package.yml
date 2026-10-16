@@ -11,6 +11,11 @@ page:
     subpages:
         sources: { title: 'translate:search_sources' }
         search: { title: 'translate:search_search' }
+        settings:
+            title: 'translate:search_settings'
+            icon: 'rex-icon fa-cogs'
+            itemAttr:
+                class: pull-right
 
 requires:
     php: '>=8.1'
@@ -18,3 +23,4 @@ requires:
 
 console_commands:
     search:index: rex_search_command_index
+    search:words: rex_search_command_words

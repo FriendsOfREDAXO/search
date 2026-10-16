@@ -232,6 +232,198 @@ Die Klasse erbt von `SourceType` und implementiert mindestens `getKey()`, `getLa
 
 ## Suchen
 
-`FriendsOfRedaxo\Search\Index\IndexRepository::search($query, $namespaces, $types, $limit)` liefert
-Treffer per `MATCH … AGAINST` im BOOLEAN MODE, optional eingeschränkt auf Namespaces, Typen oder
-Quellen-IDs. Die Seite *Suche → Suche* bietet dieselbe Abfrage mit Quellenauswahl zum Ausprobieren.
+```php
+use FriendsOfRedaxo\Search\Query\SearchQuery;
+use FriendsOfRedaxo\Search\Query\Searcher;
+
+$result = (new Searcher())->search(
+    SearchQuery::create($_GET['q'] ?? '')
+        ->withNamespaces('article')
+        ->withClangIds(rex_clang::getCurrentId())
+        ->withPage(1, 10),
+);
+
+foreach ($result as $hit) {
+    echo '<h3><a href="' . rex_escape($hit->url) . '">' . $hit->getHighlightedTitle() . '</a></h3>';
+    echo '<p>' . $hit->getHighlightedSnippet() . '</p>';
+}
+```
+
+Für den einfachsten Fall genügt `(new Searcher())->searchFor('burg')`.
+
+### Was die Suche festlegt
+
+Es gibt **keine Abfragesprache**. Der Eingabetext ist eine Folge von Wörtern, kein UND, kein ODER,
+keine Klammern, keine Phrasen. Operatorzeichen werden entfernt, statt gedeutet zu werden – ein
+versehentliches Minus zerstört also nicht die eigene Suche. Die Regeln im Einzelnen:
+
+| Regel | Wirkung |
+|---|---|
+| Jedes Wort muss vorkommen | mehr Wörter, weniger Treffer |
+| Exakt oder als Wortanfang | `Burg` findet auch `Burgmauer`, die exakte Form steht oben |
+| Zu kurze Wörter fallen weg | unterhalb von `innodb_ft_min_token_size` steht nichts im Index |
+| Stoppwörter fallen weg | siehe unten |
+| Höchstens 12 Wörter | mehr bringt keine besseren Treffer |
+
+Weggelassene Wörter verschwinden nicht stillschweigend: `$result->getIgnoredWords()` gibt sie
+samt Grund zurück, damit die Oberfläche sie benennen kann.
+
+> **Zu den Stoppwörtern.** InnoDB bringt eine englische Liste mit, auf der ausgerechnet `und`
+> steht – neben `de`, `en`, `la`, `com` und `www`. Würde jedes Wort gefordert, lieferte die
+> Eingabe „Espresso und Boule" auf einer deutschen Seite null Treffer, weil `und` im Index nicht
+> existiert. Welche Wörter betroffen sind, fragt das AddOn den Server
+> (`INNODB_FT_DEFAULT_STOPWORD`), statt eine eigene Liste zu raten.
+
+### Reihenfolge der Treffer
+
+Die Bewertung von InnoDB ist roh die Trefferzahl mal einem Wortgewicht, **ohne jede Begrenzung
+und ohne Rücksicht auf die Länge**. Ein 386-seitiges PDF mit 453 Nennungen bekommt dadurch das
+Hundertfache eines Artikels, der dasselbe Thema in drei Sätzen auf den Punkt bringt. Die Suche
+rechnet deshalb um:
+
+1. `LN(1 + score)` sättigt die Trefferhäufigkeit.
+2. Wörter, die **nahe beieinander** stehen, bekommen einen Zuschlag. „Burg Eppstein" in
+   einem Satz ist stärker als dieselben Wörter irgendwo im selben Dokument – InnoDB kann
+   das selbst, über eine Wortgruppe mit Abstandsangabe (`"burg eppstein" @20`). Faktor und
+   Abstand über `withProximityBoost()`, Vorgabe `0.8` und 20 Wörter, `0.0` schaltet ab.
+3. Die **exakte Wortform** bekommt einen Zuschlag. Gesucht wird mit `+burg*`, damit
+   Zusammensetzungen gefunden werden – ohne diesen Zuschlag läge eine Seite über das
+   *Burgfest* gleichauf mit einer über die *Burg*. Faktor über `withExactBoost()`,
+   Vorgabe `0.5`, `0.0` schaltet ab.
+4. Ein Treffer im **Titel** zählt zusätzlich, dafür gibt es einen zweiten Volltextindex über
+   `title` allein. Faktor über `withTitleBoost()`, Vorgabe `1.5`, `0.0` schaltet ab.
+5. Die **Länge** dämpft, aber erst oberhalb einer Schwelle und dann logarithmisch. Schwelle
+   über `withLengthScale()`, Vorgabe `5000` Zeichen, `0` schaltet ab.
+6. Optional ein Faktor je Quelle: `withSourceWeights([19 => 1.0, 20 => 0.5])`.
+
+> **Warum ein Zuschlag und kein Abschlag.** Die naheliegende Fassung wäre `+(>burg <burg*)`:
+> exakt höher, Wortanfang niedriger. Die Modifikatoren ändern aber den Beitrag zur Bewertung,
+> und `<` senkt ihn – ein Artikel, der neben „Burg" auch „Burgmauer" und „Burgfest" enthält,
+> wird für genau diesen Reichtum bestraft. Am echten Bestand gemessen kam dabei ein
+> **negativer** Wert heraus, und ein Artikel mit fünf Vorkommen landete unter einem
+> Meta-Eintrag von siebzehn Zeichen mit einem.
+
+> **Warum die Schwelle bei der Längendämpfung.** Eine Dämpfung, die schon zwischen 24 und
+> 984 Zeichen unterscheidet, stellt den Meta-Eintrag eines Artikels vor dessen Volltext:
+> beide haben dieselbe Bewertung, der kürzere wird weniger geteilt. Der Textausschnitt im
+> Treffer wäre dann nur der Titel. Bei gleicher Bewertung gewinnt deshalb zusätzlich das
+> inhaltsreichere Dokument.
+
+### Relevanz und Schwelle
+
+`$hit->score` ist die rohe Bewertung: unbegrenzt, und abhängig vom Wortschatz des
+Bestands – `4.50` bedeutet auf jeder Installation etwas anderes. Daneben steht
+`$hit->relevance`, der **Anteil am besten Treffer dieser Suche**, zwischen 0 und 1. Erst
+der lässt sich vergleichen und als Schwelle verwenden:
+
+```php
+$result = $searcher->search(SearchQuery::create($begriff)->withMinRelevance(0.3));
+```
+
+Alles unter 30 Prozent des besten Treffers fällt dann heraus – nützlich, sobald
+Erweiterung und Korrektur mitlaufen und die Liste nach unten ausfranst. Gefiltert wird vor
+dem Blättern, `total` stimmt also.
+
+### Facetten
+
+```php
+$result = $searcher->search(
+    SearchQuery::create($begriff)->withFacets('namespace', 'type', 'clang_id'),
+);
+
+$result->getFacet('namespace');   // ['article' => 11, 'media' => 3]
+```
+
+Gezählt wird über **alle** Treffer der Suche, nicht über die angezeigte Seite – eine
+Verteilung, die sich beim Blättern ändert, wäre unbrauchbar. Es kostet nichts extra: die
+Kandidatenliste liegt für die Dublettenprüfung ohnehin vollständig vor. Erlaubt sind
+`namespace`, `type`, `source_id` und `clang_id`; andere Werte werden verworfen.
+
+### Dubletten
+
+Ein Artikel liegt im Index einmal je Quelle, die ihn erfasst – Volltext, Meta-Name,
+Meta-Beschreibung. In einer Trefferliste wäre das dreimal dasselbe. Die Suche fasst Einträge mit
+gleichem `namespace` und `item_id` zusammen und behält den bestbewerteten. Die Sprache steckt
+bereits in der `item_id`, zwei Sprachfassungen bleiben also getrennte Treffer. Abschaltbar über
+`withGrouping(false)`.
+
+### Teiltreffer und Tippfehler
+
+Das AddOn führt neben dem Index eine **Wortliste** (`rex_search_word`): jedes Wort des
+Index einmal je Quelle und Sprache, dazu seine Dokumentzahl. Gemessen an einem Index aus
+600 Dokumenten sind das 13.000 Einträge und 2,4 MB, also rund 190 Byte je Eintrag. Sie
+beantwortet zwei Fragen, die der Volltextindex nicht beantworten kann.
+
+**Was in der Wortmitte steht.** `+burg*` findet „Burgmauer", aber nicht „Ganerbenburg".
+Die Wortliste schon: ein `LIKE '%burg%'` über 55.000 Wörter kostet gemessen 6 ms. Die
+gefundenen Formen werden als ODER-Gruppe mitgesucht, `+(ruine* burgruine)`.
+
+**Vertipptes.** `levenshtein()` über die ganze Wortliste kostet gemessen 8 ms. Verglichen
+wird die gefaltete Form – `levenshtein()` zählt Bytes, ein Tippfehler auf einem Umlaut
+würde sonst doppelt zählen und durchfallen.
+
+Beides läuft **gestaffelt**, und das ist die wichtigste Regel:
+
+| Anlauf | Wann |
+|---|---|
+| wie eingegeben | immer |
+| erweitert | wenn die erste Seite nicht voll wurde |
+| korrigiert | wenn gar nichts kam |
+
+Ohne diese Staffelung wird die Suche schlechter statt besser. Am echten Bestand gemessen:
+`burg` findet 22 Artikel; eine Erweiterung hängt „Einbürgerung", „Hamburg" und „Schomburg"
+daran, woraufhin ein Artikel über Ganerbenburgen vor den über die Burg Eppstein rutscht.
+Und `burg` mit Abstand 2 „korrigiert" zu `für`, `nur`, `zur` – bei vier Zeichen trifft
+Abstand 2 fast alles. Deshalb hängt der erlaubte Abstand an der Wortlänge: bis 4 Zeichen
+gar keine Korrektur, bis 7 Abstand 1, darüber 2.
+
+Was passiert ist, steht im Ergebnis: `$result->getExpansions()` und
+`$result->corrections`. Abschalten über `withExpansion(false)` und `withCorrection(false)`.
+
+### Die Wortliste bauen
+
+Sie entsteht **beim Indexlauf**, aus dem Text, der ohnehin durch die Hand geht – gemessen
+rund 2 % Aufschlag. Geschrieben wird am Ende des Laufs, in einem Zug: nur ein vollständig
+durchgelaufener Lauf kennt den Wortschatz einer Quelle ganz und darf den alten ersetzen.
+Verliert eine Quelle ein Wort, verschwindet es damit; kennt eine andere Quelle es auch,
+bleibt es stehen, denn jede Quelle hat ihre eigenen Zeilen.
+
+Dazu gibt es `bin/console search:words`. Der Befehl liest nur `title` und `content` aus
+dem Index und braucht dafür gemessen rund 2,5 Sekunden. Gedacht für den Fall nach einem
+Update – Index voll, Wortliste leer –, wo ein vollständiger Neuaufbau jedes PDF neu
+extrahieren und jeden Artikel neu rendern müsste.
+
+`Indexer::reindexItem()` – der Einzelaufruf für fremden Code – rührt die Wortliste **nicht**
+an: ein einzelner Datensatz verrät nicht, ob ein Wort aus der ganzen Quelle verschwunden
+ist. Schaden kann das nicht, denn ein veraltetes Wort wird nie angezeigt: eine Erweiterung
+zählt nur, wenn sie mehr Treffer bringt, und eine Korrektur nur, wenn sie überhaupt welche
+bringt. Der nächste vollständige Lauf räumt auf.
+
+Je Quelle lässt sich das abschalten: **Wörter für Vorschläge sammeln**. Bei Dokumentquellen
+ist das sinnvoll, denn gescannte PDFs bringen Zeichenfolgen mit, die keine Wörter sind –
+im Testbestand steuerten acht PDFs 5.393 Wörter bei, darunter `brrg` und `bzrg`, und eine
+Tippfehlerkorrektur hätte `burg` bereitwillig dorthin verbessert.
+
+> **Zu den Sprachen.** Jedes Wort trägt seine `clang_id`, die Erweiterung bevorzugt die
+> gesuchte Sprache. Wörter ohne Sprache – Dokumente aus dem Medienpool und
+> YForm-Datensätze haben keine – zählen immer mit, sonst fielen sie aus jeder
+> sprachbezogenen Suche. Gespeichert wird das Wort so, wie es im Text steht; `word` ist
+> deshalb `varbinary`, denn unter `utf8mb4_general_ci` gelten „gross" und „groß" als
+> dasselbe und ein eindeutiger Schlüssel würde eines davon verschlucken.
+
+### Suchbegriffe von außen umschreiben
+
+```php
+rex_extension::register('SEARCH_QUERY_TERMS', function (rex_extension_point $ep) {
+    /** @var FriendsOfRedaxo\Search\Query\SearchTerms $terms */
+    $terms = $ep->getSubject();
+    // ... eigenen Ausdruck bauen, etwa mit Wortstämmen oder Synonymen
+    return $terms;
+});
+```
+
+Hier hängen später Stemming, Synonyme und die unscharfe Suche ein.
+
+### Backend
+
+Die Seite *Suche → Suche* nutzt dieselbe API mit Quellenauswahl, Hervorhebung und Blättern.

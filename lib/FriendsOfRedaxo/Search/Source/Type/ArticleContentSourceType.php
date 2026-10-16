@@ -46,9 +46,9 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
         return 'fullcontent';
     }
 
-    public function getConfigFields(array $config): array
+    protected function getOwnConfigFields(array $config): array
     {
-        $fields = parent::getConfigFields($config);
+        $fields = parent::getOwnConfigFields($config);
         $fields[] = new ConfigField('mode', rex_i18n::msg('search_article_mode'), ConfigField::SELECT, [
             self::MODE_SLICES => rex_i18n::msg('search_article_mode_slices'),
             self::MODE_RENDERED => rex_i18n::msg('search_article_mode_rendered'),
