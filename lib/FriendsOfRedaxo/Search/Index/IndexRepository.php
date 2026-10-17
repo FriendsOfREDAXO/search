@@ -121,6 +121,29 @@ class IndexRepository
     /**
      * Entfernt alle Dokumente einer Quelle, die ein Komplettaufbau nicht angefasst hat.
      */
+    /**
+     * Wie viele Dokumente dieser Quelle eine Markdown-Ueberschrift enthalten.
+     *
+     * Die Zerlegung nach Gliederung schneidet an Ueberschriften. Sind keine da, tut sie
+     * nichts -- sie faellt auf feste Stuecke zurueck, ohne das zu sagen. Gemessen ist das
+     * der haeufigere Fall, als man denkt: von acht PDFs im Beispielbestand hat eines eine
+     * Ueberschrift, das groesste auf 900.000 Zeichen keine einzige.
+     *
+     * Ein voller Durchlauf ueber content_raw, kein Index hilft dabei. Gemessen 5 bis 11 ms
+     * fuer 863 Dokumente -- vertretbar auf der Einstellungsseite, nicht in einer Suche.
+     */
+    public function countWithHeadings(int $sourceId): int
+    {
+        $rows = rex_sql::factory()->getArray(
+            'SELECT COUNT(*) AS anzahl FROM ' . self::table()
+            . " WHERE source_id = :s AND content_raw_format = 'markdown'"
+            . " AND content_raw REGEXP '(^|\\n)#{1,6}[[:space:]]'",
+            ['s' => $sourceId],
+        );
+
+        return (int) ($rows[0]['anzahl'] ?? 0);
+    }
+
     public function deleteStale(int $sourceId, DateTimeImmutable $runStartedAt): int
     {
         $sql = rex_sql::factory();
