@@ -8,6 +8,7 @@ use FriendsOfRedaxo\Search\Chunk\Chunk;
 use FriendsOfRedaxo\Search\Chunk\ChunkInput;
 use FriendsOfRedaxo\Search\Chunk\ChunkStrategy;
 use FriendsOfRedaxo\Search\Chunk\TextSplitter;
+use FriendsOfRedaxo\Search\Source\ConfigField;
 use rex_i18n;
 
 use function count;
@@ -34,8 +35,12 @@ final class MarkdownChunkStrategy extends ChunkStrategy
     /**
      * Ein Abschnitt unter dieser Groesse wird mit dem naechsten zusammengelegt. Eine
      * Ueberschrift mit einem Satz darunter ist kein eigener Abschnitt.
+     *
+     * Nur die Vorgabe -- je Quelle einstellbar, weil die richtige Zahl am Inhalt haengt:
+     * eine Seite aus kurzen Merksaetzen will sie klein, ein Haushaltsplan mit Kapiteln
+     * von drei Zeilen will sie gross.
      */
-    private const MERGE_BELOW = 300;
+    public const DEFAULT_MERGE_BELOW = 300;
 
     public function getKey(): string
     {
@@ -54,7 +59,26 @@ final class MarkdownChunkStrategy extends ChunkStrategy
 
     public function getConfigFields(array $config): array
     {
-        return FixedChunkStrategy::sizeFields();
+        return [
+            ...FixedChunkStrategy::sizeFields(),
+            new ConfigField('chunk_merge_below', rex_i18n::msg('search_chunk_merge_below'), ConfigField::TEXT, notice: rex_i18n::msg('search_chunk_merge_below_notice'), default: (string) self::DEFAULT_MERGE_BELOW),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    public static function mergeBelow(array $config): int
+    {
+        $value = $config['chunk_merge_below'] ?? null;
+        if (null === $value || '' === (string) $value) {
+            return self::DEFAULT_MERGE_BELOW;
+        }
+
+        // 0 schaltet das Zusammenlegen ab: unter null Zeichen ist kein Abschnitt. Nach
+        // oben gilt dieselbe Grenze wie fuer die Abschnittsgroesse -- darueber haette
+        // die Zahl ohnehin keine Wirkung mehr, weil die zweite Bedingung greift.
+        return min(8000, max(0, (int) $value));
     }
 
     public function split(ChunkInput $input, array $config): array
@@ -67,7 +91,7 @@ final class MarkdownChunkStrategy extends ChunkStrategy
         $overlap = FixedChunkStrategy::overlap($config);
 
         $chunks = [];
-        foreach (self::sections($input->getText(), $input->title, $size) as $section) {
+        foreach (self::sections($input->getText(), $input->title, $size, self::mergeBelow($config)) as $section) {
             foreach (TextSplitter::split($section['text'], $size, $overlap) as $piece) {
                 $chunks[] = new Chunk($piece, $section['path']);
             }
@@ -81,7 +105,7 @@ final class MarkdownChunkStrategy extends ChunkStrategy
      *
      * @return list<array{path: string, text: string}>
      */
-    private static function sections(string $markdown, string $title, int $size): array
+    private static function sections(string $markdown, string $title, int $size, int $mergeBelow): array
     {
         $sections = [];
         /** @var array<int, string> $stack Ebene auf Ueberschrift */
@@ -126,7 +150,7 @@ final class MarkdownChunkStrategy extends ChunkStrategy
         }
         $flush();
 
-        return self::mergeSmall($sections, $size);
+        return self::mergeSmall($sections, $size, $mergeBelow);
     }
 
     /**
@@ -159,18 +183,20 @@ final class MarkdownChunkStrategy extends ChunkStrategy
      * Legt zu kleine Abschnitte mit dem folgenden zusammen.
      *
      * Der Pfad des ersten bleibt stehen: er ist der allgemeinere, und unter ihm steht
-     * danach beides.
+     * danach beides. Zusammengelegt wird nur, solange das Ergebnis in die
+     * Abschnittsgroesse passt -- sonst entstuende genau der ueberlange Abschnitt, den
+     * die Zerlegung vermeiden soll.
      *
      * @param list<array{path: string, text: string}> $sections
      * @return list<array{path: string, text: string}>
      */
-    private static function mergeSmall(array $sections, int $size): array
+    private static function mergeSmall(array $sections, int $size, int $mergeBelow): array
     {
         $merged = [];
         foreach ($sections as $section) {
             $last = count($merged) - 1;
             if ($last >= 0
-                && mb_strlen($merged[$last]['text']) < self::MERGE_BELOW
+                && mb_strlen($merged[$last]['text']) < $mergeBelow
                 && mb_strlen($merged[$last]['text']) + mb_strlen($section['text']) <= $size
             ) {
                 $merged[$last]['text'] .= "\n\n" . $section['text'];

@@ -556,7 +556,14 @@ Am größten Dokument des Beispielbestands (537.000 Zeichen) gemessen:
 | Nach Gliederung | 3000 | 400 | 353 | 2939 |
 | Feste Größe | 800 | 100 | 1268 | 783 |
 
-Vier Dinge, die dabei fest eingebaut sind:
+**Nach Gliederung** hat ein viertes Feld: *Kleine Abschnitte zusammenlegen*. Ein Abschnitt
+unter dieser Zeichenzahl wandert in den folgenden – eine Überschrift mit einem Satz darunter ist
+kein eigener Abschnitt. Vorgabe sind 300 Zeichen, `0` schaltet es ab. Die richtige Zahl hängt am
+Inhalt: eine Seite aus kurzen Merksätzen will sie klein, ein Dokument mit Kapiteln von drei
+Zeilen will sie groß. Zusammengelegt wird nur, solange das Ergebnis noch in die Abschnittsgröße
+passt – sonst entstünde genau der überlange Abschnitt, den die Zerlegung vermeiden soll.
+
+Drei Dinge, die dabei fest eingebaut sind:
 
 **Abschnitte werden aus dem Index gelesen, nicht aus der Quelle.** Eine geänderte Zerlegung
 braucht deshalb keinen neuen Indexlauf – kein PDF wird ein zweites Mal durch `pdftotext`
