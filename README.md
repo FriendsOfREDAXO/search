@@ -556,6 +556,25 @@ Am größten Dokument des Beispielbestands (537.000 Zeichen) gemessen:
 | Nach Gliederung | 3000 | 400 | 353 | 2939 |
 | Feste Größe | 800 | 100 | 1268 | 783 |
 
+> **Nach Gliederung wirkt nur, wo es Überschriften gibt.** Fehlen sie, fällt das Verfahren
+> stillschweigend auf feste Stücke zurück – die Einstellung sieht richtig aus und tut nichts.
+> Am Beispielbestand gemessen ist das der häufigere Fall: von acht PDFs trägt eines eine
+> Überschrift, und ausgerechnet das größte mit 904.000 Zeichen keine einzige. Bei den Artikeln
+> dagegen 165 von 188. Die Einstellungsseite nennt unter *Gliederung der Dokumente* die Quellen,
+> bei denen weniger als die Hälfte der Dokumente eine Überschrift hat.
+>
+> Für solche Quellen ist nicht das Verfahren der Hebel, sondern die **Größe**. Am Haushaltsplan
+> gemessen liefern *Nach Gliederung* und *Feste Größe* bei gleicher Größe Zeichen für Zeichen
+> dasselbe Ergebnis; was sich ändert, ist der Anteil reiner Tabellenfragmente:
+>
+> | Größe / Überlappung | Abschnitte | ⌀ Zeichen | Tabellenfragmente |
+> |---|---|---|---|
+> | 1500 / 200 | 693 | 1475 | 42 % |
+> | 3000 / 400 | 353 | 2939 | 32 % |
+>
+> Als Tabellenfragment zählt dabei ein Abschnitt, in dem mehr als ein Viertel der Zeichen
+> Ziffern sind. Ganz verschwinden sie nicht – sie stehen so im PDF.
+
 **Nach Gliederung** hat ein viertes Feld: *Kleine Abschnitte zusammenlegen*. Ein Abschnitt
 unter dieser Zeichenzahl wandert in den folgenden – eine Überschrift mit einem Satz darunter ist
 kein eigener Abschnitt. Vorgabe sind 300 Zeichen, `0` schaltet es ab. Die richtige Zahl hängt am

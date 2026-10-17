@@ -7,6 +7,7 @@ namespace FriendsOfRedaxo\Search\Backend;
 use FilesystemIterator;
 use FriendsOfRedaxo\Search\Analysis\Analyzer;
 use FriendsOfRedaxo\Search\Chunk\ChunkRepository;
+use FriendsOfRedaxo\Search\Chunk\ChunkStrategyRegistry;
 use FriendsOfRedaxo\Search\Extract\DocumentExtractorRegistry;
 use FriendsOfRedaxo\Search\Extract\ExtractionContext;
 use FriendsOfRedaxo\Search\Extract\Process;
@@ -274,6 +275,42 @@ final class Diagnosis
             self::WARNING,
         );
 
+        // Eine Quelle, die nach Gliederung zerlegt, deren Dokumente aber keine
+        // Ueberschrift tragen, zerlegt in Wahrheit in feste Stuecke. Das Verfahren sagt
+        // das nicht, und auf der Quellenliste sieht die Einstellung richtig aus.
+        if (0 < $chunks) {
+            $index = new IndexRepository();
+            $outline = [];
+            foreach ((new SourceRepository())->findAll() as $source) {
+                $usesOutline = $source->createsChunks()
+                    && ChunkStrategyRegistry::DEFAULT_KEY === (string) $source->getConfig('chunk_strategy', ChunkStrategyRegistry::DEFAULT_KEY);
+                $outline[] = [
+                    'name' => $source->name,
+                    'chunks' => $source->createsChunks(),
+                    'strategy' => (string) $source->getConfig('chunk_strategy', ChunkStrategyRegistry::DEFAULT_KEY),
+                    // Indexzeilen, nicht Datensaetze der Quelle: countWithHeadings() zaehlt Zeilen,
+                    // und ein Datensatz kann mehrere ergeben.
+                    'documents' => $usesOutline ? $index->countBySource($source->requireId()) : 0,
+                    'withHeadings' => $usesOutline ? $index->countWithHeadings($source->requireId()) : 0,
+                ];
+            }
+            $without = self::sourcesWithoutOutline($outline);
+
+            $names = [];
+            foreach ($without as $entry) {
+                $names[] = $entry['name'] . ' (' . $entry['withHeadings'] . '/' . $entry['documents'] . ')';
+            }
+
+            $checks[] = self::check(
+                rex_i18n::rawMsg('search_diagnosis_outline'),
+                [] === $without,
+                [] === $without
+                    ? rex_i18n::rawMsg('search_diagnosis_outline_ok')
+                    : rex_i18n::rawMsg('search_diagnosis_outline_missing', implode(', ', $names)),
+                self::WARNING,
+            );
+        }
+
         $store = new VectorStore();
         $vectors = $store->countAll();
         $open = (new Embedder())->countOpen();
@@ -416,6 +453,39 @@ final class Diagnosis
     /**
      * @return array{label: string, state: string, detail: string}
      */
+    /**
+     * Die Quellen, deren Zerlegung nach Gliederung kaum etwas zu tun hat.
+     *
+     * Drei Bedingungen muessen zusammenkommen: die Zerlegung ist eingeschaltet, sie geht
+     * nach Gliederung, und in weniger als der Haelfte der Dokumente steht ueberhaupt
+     * eine Ueberschrift.
+     *
+     * Die Haelfte ist eine Setzung, keine Messung -- aber "gar keine Ueberschrift" war
+     * zu streng: die Medienpool-Quelle des Beispielbestands hat in einem von acht
+     * Dokumenten eine, und ausgerechnet das groesste mit 900.000 Zeichen hat keine. Mit
+     * der strengen Regel waere genau die Quelle durchgerutscht, um die es ging.
+     *
+     * @param list<array{name: string, chunks: bool, strategy: string, documents: int, withHeadings: int}> $sources
+     * @return list<array{name: string, documents: int, withHeadings: int}>
+     */
+    public static function sourcesWithoutOutline(array $sources): array
+    {
+        $found = [];
+        foreach ($sources as $source) {
+            if (!$source['chunks'] || ChunkStrategyRegistry::DEFAULT_KEY !== $source['strategy']) {
+                continue;
+            }
+            // Eine Quelle ohne Dokumente faellt hier von selbst heraus: 0 < 0 ist falsch.
+            // Eine eigene Pruefung darauf waere toter Code -- sie schlug bei keiner
+            // Mutation an, weil es keinen Fall gibt, den sie zusaetzlich abfaengt.
+            if (2 * $source['withHeadings'] < $source['documents']) {
+                $found[] = ['name' => $source['name'], 'documents' => $source['documents'], 'withHeadings' => $source['withHeadings']];
+            }
+        }
+
+        return $found;
+    }
+
     private static function check(string $label, bool $ok, string $detail, string $failState = self::MISSING): array
     {
         return ['label' => $label, 'state' => $ok ? self::OK : $failState, 'detail' => $detail];
