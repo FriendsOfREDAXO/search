@@ -1,28 +1,28 @@
 <?php return array(
     'root' => array(
-        'name' => '__root__',
+        'name' => 'friendsofredaxo/search',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '9a7a4378b571d213231dc104ed0ed7793edea2da',
-        'type' => 'library',
+        'reference' => 'db9b7173d5c02513602f3bbf4ea2dc0e9e6c5014',
+        'type' => 'redaxo-addon',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
-        'dev' => false,
+        'dev' => true,
     ),
     'versions' => array(
-        '__root__' => array(
+        'friendsofredaxo/search' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '9a7a4378b571d213231dc104ed0ed7793edea2da',
-            'type' => 'library',
+            'reference' => 'db9b7173d5c02513602f3bbf4ea2dc0e9e6c5014',
+            'type' => 'redaxo-addon',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
             'dev_requirement' => false,
         ),
         'joomla/string' => array(
-            'pretty_version' => '4.0.0',
-            'version' => '4.0.0.0',
-            'reference' => 'da2329e05f1f5fc98b709f8638f279513bcd1108',
+            'pretty_version' => '3.0.4',
+            'version' => '3.0.4.0',
+            'reference' => '0b3d33564db389e27346f7e275c694897c939434',
             'type' => 'joomla-package',
             'install_path' => __DIR__ . '/../joomla/string',
             'aliases' => array(),

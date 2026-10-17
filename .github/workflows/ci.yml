@@ -23,3 +23,18 @@ jobs:
         run: |
           set -e
           find . -name '*.php' -not -path './vendor/*' -print0 | xargs -0 -n1 php -l
+
+  composer:
+    name: Abhaengigkeiten auf der kleinsten unterstuetzten PHP-Version
+    # Das Lockfile zog sich eine Abhaengigkeit heran, die PHP 8.3 verlangte, waehrend
+    # package.yml 8.1 verspricht. Aufgefallen ist das erst, als die Veroeffentlichung
+    # auf redaxo.org daran scheiterte -- die Syntaxpruefung sieht so etwas nicht.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - run: composer validate --strict
+      - run: composer install --no-progress --no-interaction
