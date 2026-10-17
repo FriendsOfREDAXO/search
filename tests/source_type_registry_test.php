@@ -4,6 +4,7 @@ use FriendsOfRedaxo\Search\Source\ConfigField;
 use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceType;
 use FriendsOfRedaxo\Search\Source\SourceTypeRegistry;
+use FriendsOfRedaxo\Search\Vector\VectorSupport;
 use PHPUnit\Framework\TestCase;
 
 /** @internal */
@@ -56,12 +57,24 @@ final class rex_search_source_type_registry_test extends TestCase
         $config = $type->normalizeConfig(['title' => ' Hallo ', 'tags' => ['a', '', 'b']]);
 
         // Eine nicht gesendete Checkbox ist abgewaehlt, ihr Default gilt nur fuer das leere Formular
-        self::assertSame(['language' => '', 'title' => 'Hallo', 'tags' => ['a', 'b'], 'active' => false, 'collect_words' => false], $config);
+        self::assertSame(['language' => '', 'title' => 'Hallo', 'tags' => ['a', 'b'], 'active' => false, 'collect_words' => false] + $this->chunkDefaults(), $config);
 
         // Sprache und collect_words hat jede Quelle, unabhaengig vom Typ.
         $config = $type->normalizeConfig(['title' => 'Hallo', 'active' => '1', 'collect_words' => '1', 'language' => 'de']);
 
-        self::assertSame(['language' => 'de', 'title' => 'Hallo', 'tags' => [], 'active' => true, 'collect_words' => true], $config);
+        self::assertSame(['language' => 'de', 'title' => 'Hallo', 'tags' => [], 'active' => true, 'collect_words' => true] + $this->chunkDefaults(), $config);
+    }
+
+    /**
+     * Die Felder fuer die Zerlegung gibt es nur, wo die Datenbank Vektoren kann. Der Test
+     * darf deshalb nicht davon ausgehen, worauf er gerade laeuft -- sonst ist er auf
+     * einem MySQL-8-Server rot, ohne dass etwas kaputt waere.
+     *
+     * @return array<string, mixed>
+     */
+    private function chunkDefaults(): array
+    {
+        return VectorSupport::isAvailable() ? ['create_chunks' => false] : [];
     }
 
     private function createType(string $key, bool $available): SourceType

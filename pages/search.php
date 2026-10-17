@@ -1,30 +1,66 @@
 <?php
 
 use FriendsOfRedaxo\Search\Language;
-use FriendsOfRedaxo\Search\Query\Searcher;
-use FriendsOfRedaxo\Search\Query\SearchQuery;
-use FriendsOfRedaxo\Search\Query\SearchTerms;
+use FriendsOfRedaxo\Search\Passage\Retriever;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
+use FriendsOfRedaxo\Search\Vector\Similarity;
+use FriendsOfRedaxo\Search\Vector\VectorSupport;
 
 $addon = rex_addon::get('search');
 $sources = (new SourceRepository())->findAll();
+$retriever = new Retriever();
+$semanticReady = $retriever->isReady();
+
+/** Volltext allein, Volltext und Bedeutung gemischt, oder nur die Passagen-API. */
+const SEARCH_MODE_FULLTEXT = 'fulltext';
+const SEARCH_MODE_HYBRID = 'hybrid';
+const SEARCH_MODE_PASSAGES = 'passages';
 
 $query = trim(rex_request('q', 'string'));
 $page = max(1, rex_request('p', 'int', 1));
+$perPage = 20;
 $selectedSourceIds = array_values(array_filter(array_map('intval', rex_request('sources', 'array', [])), static fn (int $id): bool => $id > 0));
 $selectedLanguage = Language::normalize(rex_request('lang', 'string'));
 
-// Nur die Sprachen zur Auswahl stellen, die auch vorkommen -- eine Liste aus vierzehn
-// Eintraegen, von denen dreizehn nichts finden, waere keine Hilfe.
-$usedLanguages = [];
-foreach ($sources as $source) {
-    $language = $source->getLanguage();
-    if (Language::UNKNOWN !== $language) {
-        $usedLanguages[$language] = Language::label($language);
-    }
-}
-ksort($usedLanguages);
+// Die Schwelle steht sonst nur im Quelltext. Hier ist sie ein Feld, damit sich
+// ausprobieren laesst, was ein anderer Wert am Ergebnis aendert -- genau dafuer ist
+// diese Seite da. Eine leere oder unsinnige Eingabe faellt auf den Standard zurueck.
+$requestedMinSimilarity = str_replace(',', '.', trim(rex_request('min', 'string', '')));
+$minSimilarity = is_numeric($requestedMinSimilarity)
+    ? Similarity::clamp((float) $requestedMinSimilarity)
+    : Similarity::DEFAULT_MINIMUM;
 
+$mode = rex_request('mode', 'string', SEARCH_MODE_FULLTEXT);
+if (!in_array($mode, [SEARCH_MODE_FULLTEXT, SEARCH_MODE_HYBRID, SEARCH_MODE_PASSAGES], true)) {
+    $mode = SEARCH_MODE_FULLTEXT;
+}
+// Ohne Vektoren gibt es nur den Volltext. Die Auswahl steht trotzdem da, nur abgeblendet
+// und mit dem Grund daneben -- sonst sucht man die Einstellung, die es gar nicht gibt.
+if (!$semanticReady) {
+    $mode = SEARCH_MODE_FULLTEXT;
+}
+
+/**
+ * Die URL dieser Suche, mit geaenderten Parametern.
+ *
+ * currentBackendPage() maskiert das Trennzeichen bereits zu &amp;. Noch einmal durch
+ * rex_escape() wuerde daraus &amp;amp;, der Browser machte daraus den Parameter "amp;q"
+ * -- die Seite bekaeme dann weder Suchbegriff noch Seitenzahl.
+ *
+ * @param array<string, mixed> $overrides
+ */
+$url = static function (array $overrides = []) use ($query, $selectedSourceIds, $selectedLanguage, $mode, $page, $minSimilarity): string {
+    return rex_url::currentBackendPage(array_merge([
+        'q' => $query,
+        'sources' => $selectedSourceIds,
+        'lang' => $selectedLanguage,
+        'mode' => $mode,
+        'min' => $minSimilarity,
+        'p' => $page,
+    ], $overrides));
+};
+
+// ---------- Formular ----------
 $sourceSelect = new rex_select();
 $sourceSelect->setName('sources[]');
 $sourceSelect->setId('search-sources');
@@ -40,16 +76,68 @@ foreach ($sources as $source) {
 }
 $sourceSelect->setSelected(array_map('strval', $selectedSourceIds));
 
-$elements = [
-    [
-        'label' => '<label for="search-q">' . $addon->i18n('status_query') . '</label>',
-        'field' => '<input class="form-control" type="text" id="search-q" name="q" value="' . rex_escape($query) . '" autofocus>',
-    ],
-    [
-        'label' => '<label for="search-sources">' . $addon->i18n('search_sources') . '</label>',
-        'field' => $sourceSelect->get(),
-        'note' => $addon->i18n('search_sources_notice'),
-    ],
+// Nur die Sprachen zur Auswahl stellen, die auch vorkommen -- eine Liste aus vierzehn
+// Eintraegen, von denen dreizehn nichts finden, waere keine Hilfe.
+$usedLanguages = [];
+foreach ($sources as $source) {
+    $language = $source->getLanguage();
+    if (Language::UNKNOWN !== $language) {
+        $usedLanguages[$language] = Language::label($language);
+    }
+}
+ksort($usedLanguages);
+
+$elements = [];
+$elements[] = [
+    'label' => '<label for="search-q">' . $addon->i18n('status_query') . '</label>',
+    'field' => '<input class="form-control" type="text" id="search-q" name="q" value="' . rex_escape($query) . '" autofocus>',
+];
+
+$modeSelect = new rex_select();
+$modeSelect->setName('mode');
+$modeSelect->setId('search-mode');
+$modeSelect->setAttribute('class', 'form-control');
+if (!$semanticReady) {
+    $modeSelect->setAttribute('disabled', 'disabled');
+}
+foreach ([
+    SEARCH_MODE_FULLTEXT => 'search_mode_fulltext',
+    SEARCH_MODE_HYBRID => 'search_mode_hybrid',
+    SEARCH_MODE_PASSAGES => 'search_mode_passages',
+] as $value => $label) {
+    $modeSelect->addOption($addon->i18n($label), $value);
+}
+$modeSelect->setSelected($mode);
+$elements[] = [
+    'label' => '<label for="search-mode">' . $addon->i18n('search_mode') . '</label>',
+    'field' => $modeSelect->get(),
+    'note' => $semanticReady
+        ? $addon->i18n('search_mode_notice')
+        : $addon->i18n('search_semantic_unavailable', VectorSupport::MIN_MARIADB),
+];
+
+// Ohne Vektoren gibt es nichts einzustellen; dann waere das Feld nur eine Frage mehr.
+//
+// Beim reinen Volltext hat die Schwelle keine Wirkung, deshalb ist das Feld dort weg.
+// Den Anfangszustand setzt der Server ueber die Klasse -- so steht das Feld gleich
+// richtig, auch ohne JavaScript. Das Skript uebernimmt nur den Wechsel der Suchart,
+// anhand der beiden data-Angaben am Eingabefeld.
+if ($semanticReady) {
+    $semanticModes = SEARCH_MODE_HYBRID . ' ' . SEARCH_MODE_PASSAGES;
+    $elements[] = [
+        'class' => SEARCH_MODE_FULLTEXT === $mode ? 'search-hidden' : '',
+        'label' => '<label for="search-min">' . $addon->i18n('search_min_similarity') . '</label>',
+        'field' => '<input class="form-control" type="number" id="search-min" name="min" step="0.01" min="0" max="1"'
+            . ' data-search-shown-by="search-mode" data-search-shown-for="' . $semanticModes . '"'
+            . ' value="' . rex_escape(number_format($minSimilarity, 2, '.', '')) . '">',
+        'note' => $addon->i18n('search_min_similarity_notice', number_format(Similarity::DEFAULT_MINIMUM, 2, ',', '')),
+    ];
+}
+
+$elements[] = [
+    'label' => '<label for="search-sources">' . $addon->i18n('search_sources') . '</label>',
+    'field' => $sourceSelect->get(),
+    'note' => $addon->i18n('search_sources_notice'),
 ];
 
 if ([] !== $usedLanguages) {
@@ -71,136 +159,30 @@ if ([] !== $usedLanguages) {
 
 $fragment = new rex_fragment();
 $fragment->setVar('elements', $elements, false);
-$body = $fragment->parse('core/form/form.php');
+$formBody = $fragment->parse('core/form/form.php');
 
 $fragment = new rex_fragment();
 $fragment->setVar('elements', [
-    ['field' => '<button class="btn btn-primary rex-form-aligned" type="submit"><i class="rex-icon fa-search"></i> ' . $addon->i18n('status_search') . '</button>'],
+    // Eine neue Suche faengt auf Seite eins an.
+    ['field' => '<button class="btn btn-primary rex-form-aligned" type="submit" name="p" value="1"><i class="rex-icon fa-search"></i> ' . $addon->i18n('status_search') . '</button>'],
 ], false);
-$buttons = $fragment->parse('core/form/submit.php');
+$formButtons = $fragment->parse('core/form/submit.php');
 
-if ('' !== $query) {
-    $search = SearchQuery::create($query)
-        ->withSourceIds(...$selectedSourceIds)
-        ->withFacets('namespace', 'type', 'language', 'clang_id')
-        ->withPage($page, 20);
-    if (Language::UNKNOWN !== $selectedLanguage) {
-        $search = $search->withLanguages($selectedLanguage);
-    }
-    $result = (new Searcher())->search($search);
-
-    // Weggelassene Woerter benennen: "keine Treffer" waere hier die falsche Auskunft.
-    $ignored = [];
-    foreach ($result->getIgnoredWords() as $word => $reason) {
-        // Kein Markup in die Argumente: i18n() maskiert sie, das Markup waere sonst sichtbar.
-        $ignored[] = $word . ' (' . $addon->i18n(SearchTerms::REASON_STOPWORD === $reason ? 'search_word_stopword' : 'search_word_too_short') . ')';
-    }
-    if ([] !== $ignored) {
-        $body .= rex_view::warning($addon->i18n('search_words_ignored', implode(', ', $ignored)));
-    }
-
-    if ($result->isCorrected()) {
-        $body .= rex_view::info($addon->i18n(
-            'search_words_corrected',
-            implode(', ', array_keys($result->corrections)),
-            implode(', ', array_values($result->corrections)),
-        ));
-    }
-
-    $expanded = [];
-    foreach ($result->getExpansions() as $forms) {
-        foreach ($forms as $form) {
-            $expanded[$form] = true;
-        }
-    }
-    if ([] !== $expanded) {
-        $body .= rex_view::info($addon->i18n('search_words_expanded', implode(', ', array_keys($expanded))));
-    }
-
-    if ($result->isEmpty()) {
-        $body .= '<p>' . $addon->i18n('status_no_results') . '</p>';
-    } else {
-        $body .= '<p><strong>' . $addon->i18n('search_results', $result->total) . '</strong>';
-        if (1 < $result->getPageCount()) {
-            $body .= ' <span class="text-muted">' . $addon->i18n('search_page_of', $result->getPage(), $result->getPageCount()) . '</span>';
-        }
-        $body .= '</p>';
-
-        // Verteilung ueber alle Treffer, nicht ueber die angezeigte Seite.
-        $clangName = static function (int $id): string {
-            $clang = rex_clang::get($id);
-
-            return null === $clang ? ($id > 0 ? '#' . $id : '–') : $clang->getName();
-        };
-        $verteilung = [];
-        $facetName = static function (string $facet, string $value) use ($clangName): string {
-            if ('clang_id' === $facet) {
-                return $clangName((int) $value);
-            }
-
-            return 'language' === $facet ? Language::label($value) : $value;
-        };
-        foreach ([
-            'namespace' => 'search_facet_namespace',
-            'type' => 'search_facet_type',
-            'language' => 'search_facet_language',
-            'clang_id' => 'search_facet_clang',
-        ] as $facet => $label) {
-            $werte = [];
-            foreach ($result->getFacet($facet) as $wert => $anzahl) {
-                $werte[] = rex_escape($facetName($facet, (string) $wert)) . ' <span class="badge">' . $anzahl . '</span>';
-            }
-            if ([] !== $werte) {
-                $verteilung[] = '<dt>' . $addon->i18n($label) . '</dt><dd>' . implode(' &middot; ', $werte) . '</dd>';
-            }
-        }
-        if ([] !== $verteilung) {
-            $body .= '<dl class="dl-horizontal">' . implode('', $verteilung) . '</dl>';
-        }
-
-        $body .= '<div class="list-group">';
-
-        foreach ($result as $hit) {
-            $title = '' !== $hit->title ? $hit->getHighlightedTitle() : rex_escape($hit->itemId);
-            $link = '' !== $hit->url
-                ? '<a href="' . rex_escape($hit->url) . '" target="_blank" rel="noopener">' . $title . '</a>'
-                : $title;
-            $sourceName = $sourceNames[$hit->sourceId] ?? ('#' . $hit->sourceId);
-            $body .= '<div class="list-group-item">'
-                . '<h4 class="list-group-item-heading">' . $link . '</h4>'
-                . '<p class="list-group-item-text">' . $hit->getHighlightedSnippet() . '</p>'
-                . '<small class="text-muted">' . rex_escape($addon->i18n('status_result_meta', $sourceName, $hit->namespace, $hit->type, $hit->itemId, number_format($hit->score, 2))) . '</small>'
-                . '</div>';
-        }
-        $body .= '</div>';
-
-        if (1 < $result->getPageCount()) {
-            $body .= '<ul class="pagination">';
-            for ($p = 1; $p <= min(20, $result->getPageCount()); ++$p) {
-                // currentBackendPage() maskiert das Trennzeichen bereits zu &amp;. Noch
-                // einmal durch rex_escape() wuerde daraus &amp;amp;, der Browser machte
-                // daraus den Parameter "amp;q" -- die Seite bekaeme dann weder Suchbegriff
-                // noch Seitenzahl, und das Blaettern fuehrte stets zur leeren Suche.
-                $url = rex_url::currentBackendPage([
-                    'q' => $query,
-                    'sources' => $selectedSourceIds,
-                    'lang' => $selectedLanguage,
-                    'p' => $p,
-                ]);
-                $body .= '<li class="' . ($p === $result->getPage() ? 'active' : '') . '">'
-                    . '<a href="' . $url . '">' . $p . '</a></li>';
-            }
-            $body .= '</ul>';
-        }
-    }
-}
-
+// Das Formular ist ein eigener Abschnitt. Vorher stand es mit dem Ergebnis in einem,
+// und die Schaltflaeche landete dadurch unter der letzten Trefferzeile.
 $fragment = new rex_fragment();
 $fragment->setVar('class', 'edit', false);
 $fragment->setVar('title', $addon->i18n('search'));
-$fragment->setVar('body', $body, false);
-$fragment->setVar('buttons', $buttons, false);
+$fragment->setVar('body', $formBody, false);
+$fragment->setVar('buttons', $formButtons, false);
 echo '<form action="' . rex_url::currentBackendPage() . '" method="get">'
     . '<input type="hidden" name="page" value="' . rex_escape(rex_be_controller::getCurrentPage()) . '">'
     . $fragment->parse('core/page/section.php')
     . '</form>';
+
+if ('' === $query) {
+    return;
+}
+
+// ---------- Ergebnis ----------
+require __DIR__ . '/_search_results.php';

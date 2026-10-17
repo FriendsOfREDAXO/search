@@ -1,5 +1,6 @@
 <?php
 
+use FriendsOfRedaxo\Search\Chunk\ChunkBuilder;
 use FriendsOfRedaxo\Search\Document\IndexDocument;
 use FriendsOfRedaxo\Search\Index\Indexer;
 use FriendsOfRedaxo\Search\Index\IndexFilter;
@@ -11,6 +12,9 @@ use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
 use FriendsOfRedaxo\Search\Source\SourceType;
 use FriendsOfRedaxo\Search\Source\SourceTypeRegistry;
+use FriendsOfRedaxo\Search\Word\WordCollector;
+use FriendsOfRedaxo\Search\Word\WordFormRepository;
+use FriendsOfRedaxo\Search\Word\WordRepository;
 use PHPUnit\Framework\TestCase;
 
 /** Doppel: merkt sich die geschriebenen Dokumente statt sie in die Datenbank zu legen. */
@@ -45,6 +49,46 @@ final class rex_search_index_repository_spy extends IndexRepository
 final class rex_search_source_repository_spy extends SourceRepository
 {
     public function updateStats(int $id, int $itemCount, DateTimeImmutable $indexedAt): void {}
+}
+
+/**
+ * Doppel: fasst die Wortliste nicht an.
+ *
+ * Noetig, weil der Indexer sonst die echte nimmt. Dieser Test laeuft gegen die
+ * Datenbank der Installation, auf der er ausgefuehrt wird, und seine Testquelle traegt
+ * die Id 1 -- auf einer echten Installation gehoert die einer echten Quelle. Ohne diese
+ * Doppel loescht ein Testlauf deren Woerter, Abschnitte und Vektoren. Genau das ist
+ * passiert: die Abschnitte der Quelle 1 verschwanden nach jedem Suitelauf, und die
+ * Ursache sah lange nach einem Fehler im Aufbau aus.
+ */
+final class rex_search_word_repository_spy extends WordRepository
+{
+    public function replaceSource(WordCollector $collector): int
+    {
+        return 0;
+    }
+
+    public function deleteSource(int $sourceId): void {}
+}
+
+/** Doppel: fasst die Nachschlageformen nicht an. */
+final class rex_search_word_form_repository_spy extends WordFormRepository
+{
+    public function replaceSource(WordCollector $collector): int
+    {
+        return 0;
+    }
+
+    public function deleteSource(int $sourceId): void {}
+}
+
+/** Doppel: fasst Abschnitte und Vektoren nicht an. */
+final class rex_search_chunk_builder_spy extends ChunkBuilder
+{
+    public function rebuildSource(Source $source): array
+    {
+        return ['chunks' => 0, 'kept' => 0, 'written' => 0, 'deleted' => 0];
+    }
 }
 
 /** Quellentyp mit festen Datensaetzen 1 bis 6. */
@@ -200,7 +244,7 @@ final class rex_search_index_filter_test extends TestCase
         $this->register($this->filter('nur_gerade', static fn (string $id): bool => 0 === (int) $id % 2));
 
         $index = new rex_search_index_repository_spy();
-        $indexer = new Indexer($index, new rex_search_source_repository_spy());
+        $indexer = self::indexer($index);
 
         self::assertSame(0, $indexer->reindexItem($this->source(['nur_gerade' => []]), '3'));
         self::assertSame(['3'], $index->deletedItems);
@@ -213,9 +257,23 @@ final class rex_search_index_filter_test extends TestCase
     private function rebuild(Source $source): array
     {
         $index = new rex_search_index_repository_spy();
-        $result = (new Indexer($index, new rex_search_source_repository_spy()))->rebuild($source);
+        $result = self::indexer($index)->rebuild($source);
 
         return [$result, $index];
+    }
+
+    /**
+     * Ein Indexer, der nirgends hinschreibt.
+     */
+    private static function indexer(rex_search_index_repository_spy $index): Indexer
+    {
+        return new Indexer(
+            $index,
+            new rex_search_source_repository_spy(),
+            new rex_search_word_repository_spy(),
+            new rex_search_word_form_repository_spy(),
+            new rex_search_chunk_builder_spy(),
+        );
     }
 
     /** @param array<string, array<string, mixed>> $filters */

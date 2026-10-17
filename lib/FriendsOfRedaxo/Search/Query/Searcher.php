@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Query;
 
 use DateTimeImmutable;
+use FriendsOfRedaxo\Search\Vector\SemanticSearch;
 use FriendsOfRedaxo\Search\Word\WordExpander;
 use FriendsOfRedaxo\Search\Word\WordRepository;
 use rex;
@@ -29,7 +30,7 @@ use const JSON_THROW_ON_ERROR;
  * um die es hier geht (ein paar zehntausend Zeilen), kostet das nichts.
  *
  * Die Bewertung steht in {@see ScoreExpression} und nirgends sonst.
- * @phpstan-type Candidate array{id: int, namespace: string, item_id: string, type: string, source_id: int, clang_id: int, language: string, direct: bool, score: float, relevance?: float}
+ * @phpstan-type Candidate array{id: int, namespace: string, item_id: string, type: string, source_id: int, clang_id: int, language: string, direct: bool, score: float, relevance?: float, snippet?: string, similarity?: float, passages?: list<array<string, mixed>>, group?: list<array<string, mixed>>}
  */
 final class Searcher
 {
@@ -37,14 +38,20 @@ final class Searcher
 
     private readonly WordRepository $words;
 
+    private readonly SemanticSearch $semantic;
+
     private ?WordExpander $expander = null;
 
     private ?bool $hasWordList = null;
 
-    public function __construct(?TermParser $parser = null, ?WordRepository $words = null)
+    /** @var list<Candidate>|null Einmal je Suche, nicht einmal je Anlauf */
+    private ?array $semanticCandidates = null;
+
+    public function __construct(?TermParser $parser = null, ?WordRepository $words = null, ?SemanticSearch $semantic = null)
     {
         $this->parser = $parser ?? new TermParser();
         $this->words = $words ?? new WordRepository();
+        $this->semantic = $semantic ?? new SemanticSearch();
     }
 
     /**
@@ -74,6 +81,10 @@ final class Searcher
         if ($terms->isEmpty()) {
             return SearchResult::empty($query, $terms);
         }
+
+        // Die Bedeutung aendert sich zwischen den Anlaeufen nicht -- erweitert und
+        // korrigiert wird der Volltextausdruck, nicht die Frage.
+        $this->semanticCandidates = null;
 
         $result = $this->run($query, $terms);
 
@@ -168,16 +179,25 @@ final class Searcher
     private function run(SearchQuery $query, SearchTerms $terms, array $corrections = []): SearchResult
     {
         $candidates = $this->findCandidates($query, $terms);
-        if ([] === $candidates) {
+        $semantic = $this->semanticCandidates($query);
+
+        // Ein Dokument, das nur der Bedeutung nach passt, ist ein Treffer. Frueher
+        // endete die Suche hier, sobald der Volltext nichts fand -- und eine Frage ohne
+        // woertliche Entsprechung lieferte nichts, obwohl die Antwort im Bestand stand.
+        if ([] === $candidates && [] === $semantic) {
             return SearchResult::empty($query, $terms);
         }
 
         $truncated = count($candidates) >= $query->getCandidateLimit();
         $ranked = $query->isGrouped() ? $this->groupByItem($candidates) : $candidates;
+        if ([] === $semantic) {
+            // Die Bewertung ist unbegrenzt und haengt am Wortschatz des Bestands; erst
+            // der Anteil am besten Treffer ist eine Zahl, die ueberall dasselbe bedeutet.
+            $ranked = CandidateList::rank($ranked);
+        } else {
+            $ranked = CandidateList::fuse($ranked, $semantic, $query->getSemanticWeight());
+        }
 
-        // Die Bewertung ist unbegrenzt und haengt am Wortschatz des Bestands; erst der
-        // Anteil am besten Treffer ist eine Zahl, die ueberall dasselbe bedeutet.
-        $ranked = CandidateList::rank($ranked);
         $ranked = CandidateList::dropBelowMinRelevance($ranked, $query->getMinRelevance());
 
         $facets = CandidateList::countFacets($ranked, $query->getFacets());
@@ -192,6 +212,57 @@ final class Searcher
             $corrections,
             $facets,
         );
+    }
+
+    /**
+     * Die Dokumente, die der Bedeutung nach passen -- leer, wenn nicht gefragt.
+     *
+     * Gefiltert wird mit denselben Werten wie der Volltext, nur mit den Spaltennamen der
+     * dortigen Abfrage. Ohne das lieferte eine auf eine Quelle eingeschraenkte Suche
+     * ueber die Bedeutung plotzlich Treffer aus allen anderen.
+     *
+     * @return list<Candidate>
+     */
+    private function semanticCandidates(SearchQuery $query): array
+    {
+        if (null !== $this->semanticCandidates) {
+            return $this->semanticCandidates;
+        }
+        if (!$query->isSemantic() || !$this->semantic->isReady()) {
+            return $this->semanticCandidates = [];
+        }
+
+        $filters = [];
+        foreach ($query->getFilters() as $column => $values) {
+            $filters['i.' . $column] = $values;
+        }
+
+        $candidates = [];
+        foreach ($this->semantic->findDocuments(
+            $query->getTerm(),
+            $query->getSemanticMinSimilarity(),
+            $query->getSemanticLimit(),
+            $filters,
+        ) as $row) {
+            $candidates[] = [
+                'id' => $row['document_id'],
+                'namespace' => $row['namespace'],
+                'item_id' => $row['item_id'],
+                'type' => $row['type'],
+                'source_id' => $row['source_id'],
+                'clang_id' => $row['clang_id'],
+                'language' => $row['language'],
+                'direct' => false,
+                'score' => 0.0,
+                'similarity' => $row['similarity'],
+                // Der Abschnitt, der den Ausschlag gab. Ohne ihn stuende bei einem
+                // Treffer, den nur die Bedeutung gefunden hat, der Anfang des Dokuments.
+                'snippet' => $row['snippet'],
+                'passages' => $row['passages'],
+            ];
+        }
+
+        return $this->semanticCandidates = $candidates;
     }
 
     /**
@@ -271,9 +342,23 @@ final class Searcher
             // Die Kandidaten kommen bereits nach Bewertung sortiert, der erste je Schluessel
             // ist damit der beste.
             $key = $candidate['namespace'] . "\0" . $candidate['item_id'];
+            $row = [
+                'id' => $candidate['id'],
+                'source_id' => $candidate['source_id'],
+                'type' => $candidate['type'],
+                'score' => $candidate['score'],
+            ];
+
             if (!isset($best[$key])) {
+                $candidate['group'] = [$row];
                 $best[$key] = $candidate;
+                continue;
             }
+
+            // Die uebrigen Zeilen desselben Datensatzes verschwinden nicht, sie haengen
+            // am Treffer. Wer wissen will, warum ein Artikel oben steht, sieht so, ueber
+            // welche Quellen er gefunden wurde -- und die Testsuche kann es anzeigen.
+            $best[$key]['group'][] = $row;
         }
 
         return array_values($best);
@@ -324,7 +409,7 @@ final class Searcher
                 // Fehler, der Treffer faellt einfach weg.
                 continue;
             }
-            $hits[] = $this->toHit($row, $candidate['score'], $candidate['relevance'] ?? 0.0, $terms);
+            $hits[] = $this->toHit($row, $candidate, $terms);
         }
 
         return $hits;
@@ -358,10 +443,22 @@ final class Searcher
     /**
      * @param array<string, mixed> $row
      */
-    private function toHit(array $row, float $score, float $relevance, SearchTerms $terms): SearchHit
+    /**
+     * @param array<string, mixed> $row
+     * @param Candidate $candidate
+     */
+    private function toHit(array $row, array $candidate, SearchTerms $terms): SearchHit
     {
-        $window = (string) ($row['snippet_window'] ?? '');
-        $cutAtStart = 1 < (int) ($row['snippet_start'] ?? 1);
+        // Hat die Bedeutung den Treffer gebracht, zeigt der Ausschnitt den Abschnitt,
+        // der dafuer gesorgt hat -- die Suche nach der Fundstelle liefe hier ins Leere,
+        // weil keines der Suchwoerter im Text steht.
+        if (isset($candidate['snippet'])) {
+            $window = (string) $candidate['snippet'];
+            $cutAtStart = false;
+        } else {
+            $window = (string) ($row['snippet_window'] ?? '');
+            $cutAtStart = 1 < (int) ($row['snippet_start'] ?? 1);
+        }
 
         return new SearchHit(
             (int) $row['id'],
@@ -373,8 +470,11 @@ final class Searcher
             (string) $row['url'],
             null === $row['clang_id'] ? null : (int) $row['clang_id'],
             (string) $row['language'],
-            $score,
-            $relevance,
+            $candidate['score'],
+            $candidate['relevance'] ?? 0.0,
+            $candidate['similarity'] ?? null,
+            $candidate['passages'] ?? [],
+            $candidate['group'] ?? [],
             Snippet::fromWindow($window, $cutAtStart),
             $this->decodeMeta($row['meta'] ?? null),
             $this->toDate($row['updated_at'] ?? null),

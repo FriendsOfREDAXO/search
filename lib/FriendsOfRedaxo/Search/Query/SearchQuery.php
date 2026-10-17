@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Query;
 
 use FriendsOfRedaxo\Search\Language;
+use FriendsOfRedaxo\Search\Vector\Similarity;
 
 use function array_slice;
 use function count;
@@ -44,6 +45,26 @@ final class SearchQuery
     /** Woerter nahe beieinander zaehlen zusaetzlich. 0 schaltet den Zuschlag ab. */
     public const DEFAULT_PROXIMITY_BOOST = 0.8;
 
+    /**
+     * Ab dieser Aehnlichkeit zaehlt ein Dokument als semantischer Treffer.
+     *
+     * Die Zahl und ihre Begruendung stehen bei {@see Similarity}; sie ist dieselbe wie
+     * bei der Passagen-API, weil beide dasselbe Modell fragen.
+     */
+    public const DEFAULT_SEMANTIC_MIN_SIMILARITY = Similarity::DEFAULT_MINIMUM;
+
+    /**
+     * Gewicht der semantischen Liste gegenueber der des Volltexts.
+     *
+     * Gleichauf, und das ist der Sinn der Sache. Wer die Bedeutung nur als Ergaenzung
+     * will, setzt es herunter; die Verschmelzung vergleicht Plaetze, kein Wert muss
+     * dafuer umgerechnet werden. Siehe {@see RankFusion}.
+     */
+    public const DEFAULT_SEMANTIC_WEIGHT = 1.0;
+
+    /** So viele Dokumente steuert die semantische Suche hoechstens bei. */
+    public const DEFAULT_SEMANTIC_LIMIT = 50;
+
     /** Bis zu diesem Wortabstand gelten Woerter als nahe beieinander. */
     public const DEFAULT_PROXIMITY_DISTANCE = 20;
 
@@ -82,6 +103,14 @@ final class SearchQuery
     private bool $expanding = true;
 
     private bool $correcting = true;
+
+    private bool $semantic = false;
+
+    private float $semanticMinSimilarity = self::DEFAULT_SEMANTIC_MIN_SIMILARITY;
+
+    private float $semanticWeight = self::DEFAULT_SEMANTIC_WEIGHT;
+
+    private int $semanticLimit = self::DEFAULT_SEMANTIC_LIMIT;
 
     private float $titleBoost = self::DEFAULT_TITLE_BOOST;
 
@@ -170,6 +199,26 @@ final class SearchQuery
     public function isCorrecting(): bool
     {
         return $this->correcting;
+    }
+
+    public function isSemantic(): bool
+    {
+        return $this->semantic;
+    }
+
+    public function getSemanticMinSimilarity(): float
+    {
+        return $this->semanticMinSimilarity;
+    }
+
+    public function getSemanticWeight(): float
+    {
+        return $this->semanticWeight;
+    }
+
+    public function getSemanticLimit(): int
+    {
+        return $this->semanticLimit;
     }
 
     public function getTitleBoost(): float
@@ -340,6 +389,42 @@ final class SearchQuery
         return $clone;
     }
 
+    /**
+     * Die Bedeutung mitsuchen, nicht nur die Woerter.
+     *
+     * Vorgabe ist aus, und zwar aus zwei Gruenden: es kostet einen Aufruf beim KI-Dienst
+     * (gemessen 172 Millisekunden fuer eine Frage, die noch nicht im Zwischenspeicher
+     * steht, gegenueber sieben fuer die Volltextsuche), und es setzt voraus, dass fuer
+     * die Quellen ueberhaupt Vektoren erzeugt wurden. Eine Suche, die beides stillschweigend
+     * annimmt, waere auf der Haelfte der Installationen langsamer ohne besser zu sein.
+     */
+    public function withSemantic(bool $semantic = true, ?float $minSimilarity = null): self
+    {
+        $clone = clone $this;
+        $clone->semantic = $semantic;
+        if (null !== $minSimilarity) {
+            $clone->semanticMinSimilarity = Similarity::clamp($minSimilarity);
+        }
+
+        return $clone;
+    }
+
+    public function withSemanticWeight(float $weight): self
+    {
+        $clone = clone $this;
+        $clone->semanticWeight = max(0.0, $weight);
+
+        return $clone;
+    }
+
+    public function withSemanticLimit(int $limit): self
+    {
+        $clone = clone $this;
+        $clone->semanticLimit = max(1, $limit);
+
+        return $clone;
+    }
+
     public function withTitleBoost(float $titleBoost): self
     {
         $clone = clone $this;
@@ -445,6 +530,10 @@ final class SearchQuery
         $this->grouped = $other->grouped;
         $this->expanding = $other->expanding;
         $this->correcting = $other->correcting;
+        $this->semantic = $other->semantic;
+        $this->semanticMinSimilarity = $other->semanticMinSimilarity;
+        $this->semanticWeight = $other->semanticWeight;
+        $this->semanticLimit = $other->semanticLimit;
         $this->titleBoost = $other->titleBoost;
         $this->exactBoost = $other->exactBoost;
         $this->proximityBoost = $other->proximityBoost;

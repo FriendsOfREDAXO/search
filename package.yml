@@ -16,6 +16,11 @@ page:
             icon: 'rex-icon fa-cogs'
             itemAttr:
                 class: pull-right
+        docs:
+            title: 'translate:search_docs'
+            icon: 'rex-icon fa-book'
+            itemAttr:
+                class: pull-right
 
 requires:
     php: '>=8.1'
@@ -24,3 +29,6 @@ requires:
 console_commands:
     search:index: rex_search_command_index
     search:words: rex_search_command_words
+    search:chunks: rex_search_command_chunks
+    search:embed: rex_search_command_embed
+    search:ask: rex_search_command_ask

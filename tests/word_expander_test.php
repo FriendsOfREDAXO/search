@@ -208,4 +208,21 @@ final class rex_search_word_expander_test extends TestCase
     {
         self::assertNull($this->expander(['Weltraum' => 5])->correct('Slackline'));
     }
+
+    /**
+     * Quellen ohne Sprachangabe gehoeren in jede sprachbezogene Auswahl. Sonst fielen
+     * sie aus jeder Suche, die nach Sprache filtert -- und auf einer Installation, auf
+     * der niemand eine Sprache eingetragen hat, bliebe die Wortliste wirkungslos.
+     */
+    public function testSourcesWithoutALanguageAreAlwaysIncluded(): void
+    {
+        self::assertSame(['de', ''], WordRepository::withUnknown(['de']));
+        self::assertSame(['de', 'en', ''], WordRepository::withUnknown(['de', 'en']));
+    }
+
+    public function testTheUnknownLanguageIsNotAddedTwice(): void
+    {
+        self::assertSame(['de', ''], WordRepository::withUnknown(['de', '']));
+        self::assertSame([''], WordRepository::withUnknown(['']));
+    }
 }

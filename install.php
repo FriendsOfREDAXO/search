@@ -95,3 +95,54 @@ rex_sql_table::get(rex::getTable('search_word_form'))
     ->ensureIndex(new rex_sql_index('source_form_word', ['source_id', 'form', 'word'], rex_sql_index::UNIQUE))
     ->ensureIndex(new rex_sql_index('form', ['form']))
     ->ensure();
+
+// Abschnitte eines Dokuments, Grundlage der semantischen Suche.
+//
+// Sie entstehen aus dem Index, nicht aus der Quelle: so laesst sich die Zerlegung
+// aendern, ohne jedes PDF noch einmal zu lesen. Der chunk_hash entscheidet, ob ein
+// Abschnitt einen Neuaufbau uebersteht -- und mit ihm sein Vektor, der Geld gekostet hat.
+//
+// Die Tabelle wird immer angelegt, auch ohne Vektorunterstuetzung der Datenbank: sie
+// braucht keine, bleibt dann aber leer.
+rex_sql_table::get(rex::getTable('search_chunk'))
+    ->ensurePrimaryIdColumn()
+    ->ensureColumn(new rex_sql_column('source_id', 'int(11)'))
+    ->ensureColumn(new rex_sql_column('document_id', 'int(11)'))
+    ->ensureColumn(new rex_sql_column('chunk_no', 'int(11)', false, '0'))
+    ->ensureColumn(new rex_sql_column('chunk_total', 'int(11)', false, '1'))
+    ->ensureColumn(new rex_sql_column('heading_path', 'varchar(255)', false, ''))
+    ->ensureColumn(new rex_sql_column('content', 'mediumtext'))
+    ->ensureColumn(new rex_sql_column('chunk_hash', 'char(40)', false, ''))
+    ->ensureColumn(new rex_sql_column('chars', 'int(11)', false, '0'))
+    ->ensureColumn(new rex_sql_column('created_at', 'datetime', true))
+    // Fehlversuche beim Einbetten. Ein Abschnitt, an dem der Dienst dreimal gescheitert
+    // ist, wird uebergangen -- sonst blockiert er bei jedem Lauf dieselben Aufrufe.
+    ->ensureColumn(new rex_sql_column('embed_attempts', 'tinyint(3) unsigned', false, '0'))
+    ->ensureColumn(new rex_sql_column('embed_error', 'varchar(255)', true))
+    ->ensureIndex(new rex_sql_index('document_hash', ['document_id', 'chunk_hash']))
+    ->ensureIndex(new rex_sql_index('source_chunk', ['source_id']))
+    ->ensure();
+
+// Vektoren schon gestellter Fragen. Das Einbetten einer Frage dauert gemessen 172 ms,
+// die Volltextsuche selbst sieben -- und Suchbegriffe wiederholen sich stark.
+//
+// Der Vektor steht als Text da, genau in der Form, die VEC_FromText erwartet. Damit
+// braucht die Tabelle keinen VECTOR-Typ und keine feste Laenge und kann hier angelegt
+// werden, auch auf einer Datenbank ohne Vektoren -- sie bleibt dann leer.
+rex_sql_table::get(rex::getTable('search_query_vector'))
+    ->ensureColumn(new rex_sql_column('hash', 'char(40)'))
+    // Nicht "vector": seit MariaDB 11.7 ist das ein reserviertes Wort, und eine
+    // Anweisung darauf scheitert mit einem Syntaxfehler -- den ein Zwischenspeicher,
+    // der keine Suche stoeren darf, schluckt. Gemerkt habe ich es erst daran, dass die
+    // Tabelle leer blieb.
+    ->ensureColumn(new rex_sql_column('query_vector', 'mediumtext'))
+    ->ensureColumn(new rex_sql_column('created_at', 'datetime'))
+    ->ensureColumn(new rex_sql_column('used_at', 'datetime'))
+    ->ensureColumn(new rex_sql_column('uses', 'int(11)', false, '1'))
+    ->setPrimaryKey('hash')
+    ->ensureIndex(new rex_sql_index('used', ['used_at']))
+    ->ensure();
+
+// rex_search_vector gibt es hier bewusst nicht: die Spalte VECTOR verlangt eine feste
+// Laenge, und die kennt erst das Modell hinter dem eingestellten Profil. Die Tabelle legt
+// FriendsOfRedaxo\Search\Vector\VectorStore beim ersten Vektor an.

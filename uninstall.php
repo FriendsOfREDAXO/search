@@ -1,5 +1,8 @@
 <?php
 
+rex_sql_table::get(rex::getTable('search_query_vector'))->drop();
+rex_sql_table::get(rex::getTable('search_vector'))->drop();
+rex_sql_table::get(rex::getTable('search_chunk'))->drop();
 rex_sql_table::get(rex::getTable('search_word_form'))->drop();
 rex_sql_table::get(rex::getTable('search_word'))->drop();
 rex_sql_table::get(rex::getTable('search_index'))->drop();

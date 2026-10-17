@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace FriendsOfRedaxo\Search\Source;
 
+use FriendsOfRedaxo\Search\Chunk\ChunkStrategyRegistry;
 use FriendsOfRedaxo\Search\Document\IndexDocument;
 use FriendsOfRedaxo\Search\Language;
+use FriendsOfRedaxo\Search\Vector\VectorSupport;
 use rex_i18n;
 
 /**
@@ -74,7 +76,69 @@ abstract class SourceType
      */
     final public function getConfigFields(array $config): array
     {
-        return [self::getLanguageConfigField(), ...$this->getOwnConfigFields($config), ...self::getCommonConfigFields()];
+        return [
+            self::getLanguageConfigField(),
+            ...$this->getOwnConfigFields($config),
+            ...self::getCommonConfigFields(),
+            ...self::getChunkConfigFields($config),
+        ];
+    }
+
+    /**
+     * Die Felder fuer die Zerlegung in Abschnitte, Grundlage der semantischen Suche.
+     *
+     * Sie erscheinen nur, wenn die Datenbank Vektoren kann -- ohne sie waere das eine
+     * Einstellung, die nichts bewirkt. Und sie stehen hinter einem eigenen Schalter, der
+     * ausgeschaltet beginnt: Abschnitte einzubetten kostet Geld und Platz, und welche
+     * Quelle das wert ist, weiss nur der Betrieb. Am Beispielbestand gemessen machen acht
+     * PDFs allein 46 Prozent aller Abschnitte aus.
+     *
+     * @param array<string, mixed> $config
+     * @return list<ConfigField>
+     */
+    public static function getChunkConfigFields(array $config): array
+    {
+        if (!VectorSupport::isAvailable()) {
+            return [];
+        }
+
+        $fields = [
+            new ConfigField(
+                'create_chunks',
+                rex_i18n::msg('search_source_create_chunks'),
+                ConfigField::CHECKBOX,
+                notice: rex_i18n::msg('search_source_create_chunks_notice'),
+                reloadOnChange: true,
+            ),
+        ];
+
+        if (!($config['create_chunks'] ?? false)) {
+            return $fields;
+        }
+
+        $key = (string) ($config['chunk_strategy'] ?? ChunkStrategyRegistry::DEFAULT_KEY);
+        $strategy = ChunkStrategyRegistry::getOrDefault($key);
+
+        $descriptions = [];
+        foreach (ChunkStrategyRegistry::all() as $candidate) {
+            if ('' !== $candidate->getDescription()) {
+                // Der Hinweis wird vom Formular-Fragment unmaskiert ausgegeben.
+                $descriptions[] = rex_escape($candidate->getLabel() . ': ' . $candidate->getDescription());
+            }
+        }
+
+        $fields[] = new ConfigField(
+            'chunk_strategy',
+            rex_i18n::msg('search_source_chunk_strategy'),
+            ConfigField::SELECT,
+            ChunkStrategyRegistry::options(),
+            implode(' – ', $descriptions),
+            required: true,
+            reloadOnChange: true,
+            default: ChunkStrategyRegistry::DEFAULT_KEY,
+        );
+
+        return [...$fields, ...$strategy->getConfigFields($config)];
     }
 
     /**
