@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Source;
 
 use DateTimeImmutable;
+use FriendsOfRedaxo\Search\Chunk\ChunkStrategy;
+use FriendsOfRedaxo\Search\Chunk\ChunkStrategyRegistry;
 use FriendsOfRedaxo\Search\Language;
+use FriendsOfRedaxo\Search\Vector\VectorSupport;
 use rex_exception;
 use rex_i18n;
 
@@ -47,6 +50,23 @@ final class Source
     public function getLanguage(): string
     {
         return Language::normalize((string) $this->getConfig('language', Language::UNKNOWN));
+    }
+
+    /**
+     * Ob aus dieser Quelle Abschnitte fuer die semantische Suche entstehen.
+     *
+     * Die Pruefung auf die Datenbank gehoert hierher und nicht an die Aufrufer: auf einem
+     * Server ohne Vektoren kann in der Konfiguration trotzdem ein Haken stehen, etwa weil
+     * sie von einer anderen Installation uebernommen wurde.
+     */
+    public function createsChunks(): bool
+    {
+        return VectorSupport::isAvailable() && (bool) $this->getConfig('create_chunks', false);
+    }
+
+    public function getChunkStrategy(): ChunkStrategy
+    {
+        return ChunkStrategyRegistry::getOrDefault((string) $this->getConfig('chunk_strategy', ChunkStrategyRegistry::DEFAULT_KEY));
     }
 
     public function getType(): ?SourceType

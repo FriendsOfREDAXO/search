@@ -2,3 +2,263 @@
 .search-dropdown .btn {
     font-size: inherit;
 }
+
+/* ---------------------------------------------------------------------------
+   Trefferliste
+   ---------------------------------------------------------------------------
+   Die Treffer stehen in einer ganz normalen .table des Backends, wie die
+   Quellenuebersicht. Hier steht nur, was eine Trefferzeile darueber hinaus
+   braucht: die Zellen oben ausrichten (sonst zentriert der Browser den kurzen
+   Sprachnamen gegen einen fuenfzeiligen Textausschnitt) und der Textspalte so
+   viel Platz geben, dass die schmalen Spalten rechts nicht umbrechen.
+*/
+.search-table > tbody > tr > td {
+    vertical-align: top;
+}
+
+.search-table .search-col-text {
+    /* Der Rest sind vier schmale Spalten mit kurzen Werten. Ohne Vorgabe teilt der
+       Browser ihnen Platz zu, den sie nicht brauchen, und der Ausschnitt wird eng. */
+    width: 58%;
+}
+
+.search-table .search-cell-text {
+    /* "anywhere" statt "break-word": nur das erste senkt die Mindestbreite, die
+       der Browser fuer die Spalte ansetzt. Ohne das zieht eine lange URL im
+       Ausschnitt die Spalte breiter, als die Tabelle Platz hat. */
+    overflow-wrap: anywhere;
+}
+
+.search-hit-title {
+    margin-bottom: .25em;
+    font-weight: 600;
+}
+
+.search-hit-title a {
+    text-decoration: none;
+}
+
+.search-hit-title a:hover,
+.search-hit-title a:focus {
+    text-decoration: underline;
+}
+
+.search-hit-text {
+    line-height: 1.55;
+}
+
+.search-hit-title mark,
+.search-hit-text mark {
+    padding: 0 .15em;
+    background: #fdf0b8;
+    color: inherit;
+    border-radius: 2px;
+}
+
+.search-hit-meta {
+    margin-top: .3em;
+    color: #8b93a1;
+    font-size: 11px;
+}
+
+/* Die Item-ID ist eine Nebenangabe. Im Rot, das Bootstrap jedem <code> gibt,
+   zog sie den Blick staerker auf sich als der Treffer darueber. */
+.search-hit-meta code {
+    padding: 0;
+    background: none;
+    color: inherit;
+}
+
+/* Die Aehnlichkeit unter der Relevanz: abgesetzt, damit auf einen Blick zu
+   sehen ist, an welchen Treffern die Bedeutung beteiligt war. */
+.search-semantic {
+    color: #22607f;
+    white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   Facetten
+   ---------------------------------------------------------------------------
+   Statt dl-horizontal, dessen rechtsbuendige Beschriftung bei vier Zeilen eine
+   Treppe ergibt: eine Zeile je Merkmal, Beschriftung in fester Breite, Werte
+   als Chips.
+*/
+.search-facets {
+    margin: 0 0 1.2em;
+    padding: .8em 1em;
+    background: #f7f9fc;
+    border-radius: 3px;
+}
+
+.search-facet-row {
+    display: flex;
+    align-items: baseline;
+    gap: .6em;
+    padding: .18em 0;
+}
+
+.search-facet-label {
+    flex: 0 0 11em;
+    color: #8b93a1;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+}
+
+.search-facet-values {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35em;
+}
+
+.search-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: .4em;
+    padding: .1em .55em;
+    border: 1px solid #dfe3e9;
+    border-radius: 11px;
+    background: #fff;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.search-chip-count {
+    color: #8b93a1;
+    font-size: 11px;
+}
+
+/* Eine Formularzeile, die zur aktuellen Auswahl nicht gehoert. Den Anfangszustand
+   setzt die Seite, den Wechsel das Skript (siehe search.js).
+
+   Die zweite Auswahl ist noetig: be_style gibt .rex-form-group ein display: table,
+   und bei gleicher Spezifitaet gewinnt die spaeter geladene Regel -- das ist deren.
+   Mit beiden Klassen im Selektor nicht mehr. */
+.search-hidden,
+.rex-form-group.search-hidden {
+    display: none;
+}
+
+/* Was mit der Anfrage geschah -- erweiterte oder berichtigte Woerter -- steht als
+   gewoehnlicher Satz ueber dem Ergebnis. Ein Hinweiskasten ueber die ganze Breite
+   gab einer Randnotiz mehr Gewicht als der Trefferliste darunter. */
+.search-note {
+    margin: 0 0 .6em;
+}
+
+/* Die Blaetterleiste oberhalb der Tabelle steht im Panel-Body und braucht
+   unten Abstand; die im Panel-Fuss bringt ihren eigenen mit. */
+.panel-body > .rex-nav-pagination {
+    margin-bottom: 0;
+}
+
+.panel-footer > .rex-nav-pagination {
+    margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Aufklapper
+   ---------------------------------------------------------------------------
+   Ein nacktes <summary> sieht nach Text aus, und niemand kommt auf die Idee,
+   darauf zu klicken. Also ein Dreieck, das sich dreht, und ein Rahmen, der
+   beim Ueberfahren erscheint.
+*/
+.search-details {
+    margin-top: .6em;
+}
+
+.search-details > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: .45em;
+    padding: .2em .7em .2em .55em;
+    border: 1px solid #dfe3e9;
+    border-radius: 3px;
+    background: #f7f9fc;
+    color: #5a6372;
+    font-size: 11px;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+
+/* Das eigene Dreieck ersetzt das des Browsers, deshalb muss dessen weg. */
+.search-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.search-details > summary::before {
+    content: '';
+    width: 0;
+    height: 0;
+    border-left: 5px solid currentColor;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    transition: transform .12s ease-in-out;
+}
+
+.search-details[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.search-details > summary:hover,
+.search-details > summary:focus {
+    border-color: #9ca5b2;
+    background: #eef1f6;
+    color: #324050;
+}
+
+.search-details pre {
+    margin: .5em 0 0;
+    max-height: 26em;
+    overflow: auto;
+    /* In einer Tabellenzelle wuerde eine lange Zeile sonst die Spalte sprengen. */
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+body.rex-theme-dark .search-chip {
+    border-color: #3a4756;
+    background: transparent;
+}
+
+body.rex-theme-dark .search-facets,
+body.rex-theme-dark .search-details > summary {
+    background: #2b3745;
+    color: #b9c2cf;
+}
+
+body.rex-theme-dark .search-semantic {
+    color: #7fb8d8;
+}
+
+body.rex-theme-dark .search-hit-title mark,
+body.rex-theme-dark .search-hit-text mark {
+    background: #6b5a1f;
+    color: #f4efe0;
+}
+
+@media (prefers-color-scheme: dark) {
+    body:not(.rex-theme-light) .search-chip {
+        border-color: #3a4756;
+        background: transparent;
+    }
+
+    body:not(.rex-theme-light) .search-facets,
+    body:not(.rex-theme-light) .search-details > summary {
+        background: #2b3745;
+        color: #b9c2cf;
+    }
+
+    body:not(.rex-theme-light) .search-semantic {
+        color: #7fb8d8;
+    }
+
+    body:not(.rex-theme-light) .search-hit-title mark,
+    body:not(.rex-theme-light) .search-hit-text mark {
+        background: #6b5a1f;
+        color: #f4efe0;
+    }
+}

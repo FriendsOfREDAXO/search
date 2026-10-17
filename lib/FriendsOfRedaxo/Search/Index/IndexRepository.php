@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Index;
 
 use DateTimeImmutable;
+use FriendsOfRedaxo\Search\Chunk\ChunkRepository;
 use FriendsOfRedaxo\Search\Document\IndexDocument;
 use FriendsOfRedaxo\Search\Source\Source;
+use FriendsOfRedaxo\Search\Vector\VectorStore;
 use FriendsOfRedaxo\Search\Word\WordFormRepository;
 use FriendsOfRedaxo\Search\Word\WordRepository;
 use rex;
@@ -138,14 +140,16 @@ class IndexRepository
      * es gibt drei davon -- Quelle geloescht, Quelle nach Konfigurationsaenderung neu
      * aufgebaut, Quelle nach Aenderung deaktiviert -- und beim zweiten und dritten habe ich
      * es zuerst vergessen. Beim Neuaufbau schreibt der Indexer die Woerter danach ohnehin
-     * wieder. Dasselbe gilt fuer die Nachschlageformen: sie zeigen auf die Woerter und
-     * waeren ohne sie Verweise ins Leere.
+     * wieder. Dasselbe gilt fuer Nachschlageformen, Abschnitte und Vektoren: alle drei
+     * zeigen auf etwas, das es dann nicht mehr gibt.
      */
     public function deleteBySource(int $sourceId): void
     {
         rex_sql::factory()->setQuery('DELETE FROM ' . self::table() . ' WHERE source_id = :source', ['source' => $sourceId]);
         (new WordRepository())->deleteSource($sourceId);
         (new WordFormRepository())->deleteSource($sourceId);
+        (new ChunkRepository())->deleteBySource($sourceId);
+        (new VectorStore())->deleteBySource($sourceId);
     }
 
     public function countBySource(int $sourceId): int

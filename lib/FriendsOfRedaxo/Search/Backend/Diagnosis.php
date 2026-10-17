@@ -6,6 +6,7 @@ namespace FriendsOfRedaxo\Search\Backend;
 
 use FilesystemIterator;
 use FriendsOfRedaxo\Search\Analysis\Analyzer;
+use FriendsOfRedaxo\Search\Chunk\ChunkRepository;
 use FriendsOfRedaxo\Search\Extract\DocumentExtractorRegistry;
 use FriendsOfRedaxo\Search\Extract\ExtractionContext;
 use FriendsOfRedaxo\Search\Extract\Process;
@@ -14,6 +15,11 @@ use FriendsOfRedaxo\Search\Language;
 use FriendsOfRedaxo\Search\Markdown;
 use FriendsOfRedaxo\Search\Query\TermParser;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
+use FriendsOfRedaxo\Search\Vector\Embedder;
+use FriendsOfRedaxo\Search\Vector\EmbeddingClient;
+use FriendsOfRedaxo\Search\Vector\QueryVectorCache;
+use FriendsOfRedaxo\Search\Vector\VectorStore;
+use FriendsOfRedaxo\Search\Vector\VectorSupport;
 use FriendsOfRedaxo\Search\Word\WordFormRepository;
 use FriendsOfRedaxo\Search\Word\WordRepository;
 use Loupe\Matcher\Tokenizer\Tokenizer;
@@ -210,6 +216,91 @@ final class Diagnosis
         } else {
             $checks[] = self::check(rex_i18n::rawMsg('search_diagnosis_language_forms'), false, rex_i18n::rawMsg('search_diagnosis_language_forms_partial', (new WordFormRepository())->countAll(), $withoutLanguage), self::WARNING);
         }
+
+        return $checks;
+    }
+
+    /**
+     * Ob die semantische Suche moeglich ist und was dafuer schon bereitliegt.
+     *
+     * @return list<array{label: string, state: string, detail: string}>
+     */
+    public static function vectors(): array
+    {
+        $version = VectorSupport::getVersion();
+        $available = VectorSupport::isAvailable();
+
+        $checks = [self::check(
+            rex_i18n::rawMsg('search_diagnosis_vector_support'),
+            $available,
+            $available
+                ? rex_i18n::rawMsg('search_diagnosis_vector_ok', $version)
+                : rex_i18n::rawMsg('search_diagnosis_vector_missing', $version, VectorSupport::MIN_MARIADB),
+            self::WARNING,
+        )];
+
+        if (!$available) {
+            return $checks;
+        }
+
+        $configured = EmbeddingClient::isConfigured();
+        $checks[] = self::check(
+            rex_i18n::rawMsg('search_diagnosis_embedding_profile'),
+            $configured,
+            $configured
+                ? EmbeddingClient::getProfiles()[EmbeddingClient::getProfileId()] ?? ''
+                : rex_i18n::rawMsg(
+                    EmbeddingClient::isAvailable()
+                        ? 'search_settings_embedding_missing'
+                        : 'search_diagnosis_embedding_addon_missing',
+                ),
+            self::WARNING,
+        );
+
+        $chunks = (new ChunkRepository())->countAll();
+        $sources = 0;
+        foreach ((new SourceRepository())->findAll() as $source) {
+            if ($source->createsChunks()) {
+                ++$sources;
+            }
+        }
+
+        $checks[] = self::check(
+            rex_i18n::rawMsg('search_diagnosis_chunks'),
+            $chunks > 0,
+            $chunks > 0
+                ? rex_i18n::rawMsg('search_diagnosis_chunks_detail', $chunks, $sources)
+                : rex_i18n::rawMsg('search_diagnosis_chunks_none'),
+            self::WARNING,
+        );
+
+        $store = new VectorStore();
+        $vectors = $store->countAll();
+        $open = (new Embedder())->countOpen();
+        $checks[] = self::check(
+            rex_i18n::rawMsg('search_diagnosis_vectors'),
+            0 === $open && 0 < $vectors,
+            0 === $vectors
+                ? rex_i18n::rawMsg('search_diagnosis_vectors_none')
+                : rex_i18n::rawMsg(
+                    'search_diagnosis_vectors_detail',
+                    $vectors,
+                    (int) $store->getDimensions(),
+                    self::formatBytes($store->getBytes()),
+                    $open,
+                ),
+            self::WARNING,
+        );
+
+        // Steht hier nicht nur zur Information: ein Zwischenspeicher, der dauerhaft
+        // leer bleibt, ist ein Hinweis auf einen Fehler, den niemand sieht -- er
+        // schluckt seine Ausnahmen, damit er keine Suche stoert.
+        $cached = (new QueryVectorCache())->countAll();
+        $checks[] = self::check(
+            rex_i18n::rawMsg('search_diagnosis_query_cache'),
+            true,
+            rex_i18n::rawMsg('search_diagnosis_query_cache_detail', $cached, QueryVectorCache::MAX_ENTRIES),
+        );
 
         return $checks;
     }

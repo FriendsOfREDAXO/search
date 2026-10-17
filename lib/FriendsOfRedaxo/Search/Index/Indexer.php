@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Index;
 
 use DateTimeImmutable;
+use FriendsOfRedaxo\Search\Chunk\ChunkBuilder;
 use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
 use FriendsOfRedaxo\Search\Source\SourceType;
@@ -25,15 +26,17 @@ final class Indexer
     private SourceRepository $sources;
     private WordRepository $words;
     private WordFormRepository $forms;
+    private ChunkBuilder $chunks;
 
     private ?WordCollector $collector = null;
 
-    public function __construct(?IndexRepository $index = null, ?SourceRepository $sources = null, ?WordRepository $words = null, ?WordFormRepository $forms = null)
+    public function __construct(?IndexRepository $index = null, ?SourceRepository $sources = null, ?WordRepository $words = null, ?WordFormRepository $forms = null, ?ChunkBuilder $chunks = null)
     {
         $this->index = $index ?? new IndexRepository();
         $this->sources = $sources ?? new SourceRepository();
         $this->words = $words ?? new WordRepository();
         $this->forms = $forms ?? new WordFormRepository();
+        $this->chunks = $chunks ?? new ChunkBuilder();
     }
 
     /**
@@ -99,6 +102,10 @@ final class Indexer
             $this->forms->replaceSource($this->collector);
             $this->collector = null;
         }
+
+        // Zuletzt die Abschnitte, weil sie aus dem fertigen Index gelesen werden. Ist die
+        // Zerlegung fuer diese Quelle aus, raeumt der Aufruf nur auf.
+        $this->chunks->rebuildSource($source);
 
         return new IndexResult($items, $written, $deleted, $skipped);
     }

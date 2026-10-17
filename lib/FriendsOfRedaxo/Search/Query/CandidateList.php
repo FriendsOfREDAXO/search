@@ -12,7 +12,7 @@ namespace FriendsOfRedaxo\Search\Query;
  * Zahlen steht. Als reine Funktionen auf Arrays laesst sich das pruefen, ohne eine
  * Datenbank dafuer zu brauchen.
  *
- * @phpstan-type Candidate array{id: int, namespace: string, item_id: string, type: string, source_id: int, clang_id: int, language: string, direct: bool, score: float, relevance?: float}
+ * @phpstan-type Candidate array{id: int, namespace: string, item_id: string, type: string, source_id: int, clang_id: int, language: string, direct: bool, score: float, relevance?: float, snippet?: string, similarity?: float}
  */
 final class CandidateList
 {
@@ -62,6 +62,89 @@ final class CandidateList
         }
 
         return $ranked;
+    }
+
+    /**
+     * Fuehrt Volltext- und Bedeutungstreffer zu einer Liste zusammen.
+     *
+     * Verglichen werden Plaetze, keine Werte -- die Begruendung steht bei
+     * {@see RankFusion}. Was dort herauskommt, ist die Reihenfolge; die Relevanz ist
+     * danach schlicht der Anteil an der besten Punktzahl und faellt damit von selbst mit
+     * der Position.
+     *
+     * Die Zweiteilung aus {@see rank()} -- direkte Treffer vor erweiterten -- steckt
+     * schon in der Reihenfolge der Volltextliste und wandert ueber deren Plaetze mit.
+     * Sie hier noch einmal anzuwenden hiesse, sie doppelt zu zaehlen.
+     *
+     * @param list<Candidate> $keyword in der Reihenfolge der Volltextsuche
+     * @param list<Candidate> $semantic in der Reihenfolge der Aehnlichkeit
+     * @return list<Candidate>
+     */
+    public static function fuse(array $keyword, array $semantic, float $semanticWeight): array
+    {
+        $byKey = [];
+        $keywordKeys = [];
+        foreach ($keyword as $candidate) {
+            $key = self::key($candidate);
+            $keywordKeys[] = $key;
+            $byKey[$key] = $candidate;
+        }
+
+        $semanticKeys = [];
+        foreach ($semantic as $candidate) {
+            $key = self::key($candidate);
+            $semanticKeys[] = $key;
+            if (isset($byKey[$key])) {
+                // Das Dokument hat der Volltext schon gefunden. Seine Zeile bleibt -- sie
+                // traegt die Bewertung und die Kennung, mit der der Ausschnitt geladen
+                // wird --, aber was die Bedeutung beigesteuert hat, kommt dazu: die
+                // Aehnlichkeit und die Abschnitte, die dafuer gesorgt haben. Ohne sie
+                // waere an einem Treffer, den beide Wege gefunden haben, nicht mehr
+                // abzulesen, woran es lag.
+                $byKey[$key]['similarity'] = $candidate['similarity'] ?? 0.0;
+                $byKey[$key]['passages'] = $candidate['passages'] ?? [];
+                continue;
+            }
+            $byKey[$key] = $candidate;
+        }
+
+        $scores = RankFusion::fuse(
+            ['keyword' => $keywordKeys, 'semantic' => $semanticKeys],
+            ['semantic' => $semanticWeight],
+        );
+
+        // Bezogen wird nicht auf den besten Treffer dieser Suche, sondern auf das, was
+        // ueberhaupt erreichbar waere: Platz eins in beiden Listen. Sonst steht die
+        // Relevanz immer bei fast hundert Prozent -- die Punktzahlen der Verschmelzung
+        // liegen eng beieinander, 1/61 gegen 1/62 sind anderthalb Prozent Unterschied,
+        // und am Bestand gemessen bekamen vier voellig verschiedene Treffer 100, 97, 96
+        // und 95 Prozent. So heisst die Zahl etwas: ein Dokument, das beide Wege ganz
+        // oben gefunden haben, steht bei 1; eines, das nur einer von beiden kennt,
+        // hoechstens bei der Haelfte.
+        $max = (1.0 + max(0.0, $semanticWeight)) / (RankFusion::K + 1);
+
+        $fused = [];
+        foreach ($scores as $key => $score) {
+            $candidate = $byKey[$key];
+            $candidate['score'] = $score;
+            $candidate['relevance'] = self::relevance($score, $max);
+            $fused[] = $candidate;
+        }
+
+        return $fused;
+    }
+
+    /**
+     * Der Schluessel, unter dem ein Dokument in beiden Listen dasselbe ist.
+     *
+     * Derselbe wie beim Zusammenfassen in Searcher::groupByItem(): namespace und
+     * item_id. Die Sprache steckt bei Artikeln schon in der item_id.
+     *
+     * @param Candidate $candidate
+     */
+    private static function key(array $candidate): string
+    {
+        return $candidate['namespace'] . "\0" . $candidate['item_id'];
     }
 
     /**

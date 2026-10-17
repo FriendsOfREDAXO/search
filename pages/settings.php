@@ -2,6 +2,10 @@
 
 use FriendsOfRedaxo\Search\Backend\Diagnosis;
 use FriendsOfRedaxo\Search\Extract\ExtractionCache;
+use FriendsOfRedaxo\Search\Vector\EmbeddingClient;
+use FriendsOfRedaxo\Search\Vector\QueryVectorCache;
+use FriendsOfRedaxo\Search\Vector\VectorStore;
+use FriendsOfRedaxo\Search\Vector\VectorSupport;
 
 $addon = rex_addon::get('search');
 $csrf = rex_csrf_token::factory('search_settings');
@@ -15,6 +19,27 @@ if ('' !== rex_post('action', 'string')) {
         [$files] = Diagnosis::cacheSize();
         ExtractionCache::clear();
         echo rex_view::success($addon->i18n('search_settings_cache_cleared', $files));
+    } elseif ('set_profile' === rex_post('action', 'string')) {
+        $store = new VectorStore();
+        $before = (int) rex_config::get('search', 'embedding_profile', 0);
+        $after = rex_post('embedding_profile', 'int', 0);
+
+        if ($before === $after) {
+            echo rex_view::info($addon->i18n('search_settings_embedding_unchanged'));
+        } else {
+            // Vektoren verschiedener Modelle sind nicht vergleichbar -- selbst bei
+            // gleicher Laenge legt ein anderes Modell denselben Text woanders hin. Ein
+            // Wechsel verwirft sie deshalb, und zwar sofort und sichtbar. Neu erzeugt
+            // wird nichts von allein: das kostet Geld, also loest es jemand aus.
+            $discarded = $store->countAll();
+            $store->drop();
+            // Die gemerkten Fragevektoren gehoeren zum alten Modell. Der Schluessel
+            // traegt zwar die Profil-Id, sie waeren also nur totes Gewicht -- aber
+            // totes Gewicht, das niemand mehr aufraeumt.
+            (new QueryVectorCache())->clear();
+            rex_config::set('search', 'embedding_profile', $after);
+            echo rex_view::success($addon->i18n('search_settings_embedding_saved', $discarded));
+        }
     }
 }
 
@@ -93,6 +118,39 @@ $fragment->setVar('footer', '<p class="help-block">' . $addon->i18n('search_sett
 echo $fragment->parse('core/page/section.php');
 
 echo $section($addon->i18n('search_settings_languages'), Diagnosis::languages());
+// Semantische Suche: Befunde plus die einzige Einstellung, die es hier gibt.
+$vectorFooter = '';
+if (VectorSupport::isAvailable()) {
+    $profiles = EmbeddingClient::getProfiles();
+    if ([] === $profiles) {
+        $vectorFooter = '<p class="help-block">' . $addon->i18n('search_settings_embedding_no_profiles') . '</p>';
+    } else {
+        $select = new rex_select();
+        $select->setName('embedding_profile');
+        $select->setId('search-embedding-profile');
+        $select->setAttribute('class', 'form-control');
+        $select->addOption($addon->i18n('search_settings_embedding_none'), '0');
+        foreach ($profiles as $profileId => $label) {
+            $select->addOption($label, (string) $profileId);
+        }
+        $select->setSelected((string) (EmbeddingClient::getProfileId() ?? 0));
+
+        $fragment = new rex_fragment();
+        $fragment->setVar('elements', [[
+            'label' => '<label for="search-embedding-profile">' . $addon->i18n('search_settings_embedding_profile') . '</label>',
+            'field' => $select->get(),
+            'note' => $addon->i18n('search_settings_embedding_profile_notice'),
+        ]], false);
+
+        $vectorFooter = '<form action="' . rex_url::currentBackendPage() . '" method="post">'
+            . $csrf->getHiddenField()
+            . '<input type="hidden" name="action" value="set_profile">'
+            . $fragment->parse('core/form/form.php')
+            . '<button class="btn btn-save" type="submit">' . $addon->i18n('save') . '</button>'
+            . '</form>';
+    }
+}
+echo $section($addon->i18n('search_settings_vectors'), Diagnosis::vectors(), $vectorFooter);
 echo $section($addon->i18n('search_settings_database'), Diagnosis::database());
 
 [$files] = Diagnosis::cacheSize();

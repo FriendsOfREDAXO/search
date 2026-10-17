@@ -1,6 +1,8 @@
 <?php
 
+use FriendsOfRedaxo\Search\Passage\PassageQuery;
 use FriendsOfRedaxo\Search\Query\SearchQuery;
+use FriendsOfRedaxo\Search\Vector\Similarity;
 use PHPUnit\Framework\TestCase;
 
 /** @internal */
@@ -145,5 +147,46 @@ final class rex_search_search_query_test extends TestCase
     public function testTheLanguageCanBeCountedAsAFacet(): void
     {
         self::assertSame(['language'], SearchQuery::create('burg')->withFacets('language')->getFacets());
+    }
+
+    /**
+     * Aus ist die Vorgabe, und zwar aus zwei Gruenden: es kostet einen Aufruf beim
+     * KI-Dienst, und es setzt voraus, dass fuer die Quellen ueberhaupt Vektoren erzeugt
+     * wurden. Eine Suche, die beides stillschweigend annimmt, waere auf der Haelfte der
+     * Installationen langsamer, ohne besser zu sein.
+     */
+    public function testSemanticSearchIsOffUntilItIsAskedFor(): void
+    {
+        self::assertFalse(SearchQuery::create('burg')->isSemantic());
+        self::assertTrue(SearchQuery::create('burg')->withSemantic()->isSemantic());
+        self::assertFalse(SearchQuery::create('burg')->withSemantic()->withSemantic(false)->isSemantic());
+    }
+
+    /**
+     * Ohne Schwelle liefert die Nachbarsuche immer die naechsten Abschnitte, auch zu
+     * einer Frage, zu der nichts dasteht -- dann haengte an jeder Suche dieselbe
+     * Handvoll Dokumente.
+     */
+    public function testTheSemanticThresholdIsSetAndComesFromOnePlace(): void
+    {
+        self::assertGreaterThan(0.0, SearchQuery::create('burg')->getSemanticMinSimilarity());
+        self::assertSame(Similarity::DEFAULT_MINIMUM, SearchQuery::create('burg')->getSemanticMinSimilarity());
+        self::assertSame(Similarity::DEFAULT_MINIMUM, PassageQuery::create('burg')->getMinSimilarity());
+    }
+
+    public function testTheSemanticSettingsStayWithinBounds(): void
+    {
+        self::assertSame(1.0, SearchQuery::create('b')->withSemantic(true, 3.0)->getSemanticMinSimilarity());
+        self::assertSame(0.0, SearchQuery::create('b')->withSemanticWeight(-2.0)->getSemanticWeight());
+        self::assertSame(1, SearchQuery::create('b')->withSemanticLimit(0)->getSemanticLimit());
+    }
+
+    public function testTheSemanticSettingsSurviveANewTerm(): void
+    {
+        $query = SearchQuery::create('burg')->withSemantic(true, 0.3)->withSemanticWeight(0.5)->withTerm('ruine');
+
+        self::assertTrue($query->isSemantic());
+        self::assertSame(0.3, $query->getSemanticMinSimilarity());
+        self::assertSame(0.5, $query->getSemanticWeight());
     }
 }

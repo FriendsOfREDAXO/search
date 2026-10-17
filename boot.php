@@ -1,6 +1,7 @@
 <?php
 
 use FriendsOfRedaxo\Search\Analysis\Analyzer;
+use FriendsOfRedaxo\Search\Cronjob\EmbedCronjob;
 use FriendsOfRedaxo\Search\Cronjob\ReindexCronjob;
 
 $addon = rex_addon::get('search');
@@ -30,4 +31,5 @@ if (rex::isBackend() && 'search' === rex_be_controller::getCurrentPagePart(1)) {
 // laeuft ueber die Quellenliste, den Konsolenbefehl search:index oder diesen Cronjob.
 if (rex_addon::get('cronjob')->isAvailable()) {
     rex_cronjob_manager::registerType(ReindexCronjob::class);
+    rex_cronjob_manager::registerType(EmbedCronjob::class);
 }

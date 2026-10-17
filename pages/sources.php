@@ -1,6 +1,7 @@
 <?php
 
 use FriendsOfRedaxo\Search\Backend\ConfigFormRenderer;
+use FriendsOfRedaxo\Search\Chunk\ChunkRepository;
 use FriendsOfRedaxo\Search\Index\Indexer;
 use FriendsOfRedaxo\Search\Index\IndexFilterRegistry;
 use FriendsOfRedaxo\Search\Index\IndexRepository;
@@ -8,6 +9,10 @@ use FriendsOfRedaxo\Search\Language;
 use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Source\SourceRepository;
 use FriendsOfRedaxo\Search\Source\SourceTypeRegistry;
+use FriendsOfRedaxo\Search\Vector\Embedder;
+use FriendsOfRedaxo\Search\Vector\EmbeddingClient;
+use FriendsOfRedaxo\Search\Vector\VectorStore;
+use FriendsOfRedaxo\Search\Vector\VectorSupport;
 
 $addon = rex_addon::get('search');
 $csrf = rex_csrf_token::factory('search_sources');
@@ -28,10 +33,14 @@ if ('saved' === $msg) {
     echo rex_view::success($addon->i18n('source_saved_cleared'));
 } elseif ('reindexed' === $msg) {
     echo rex_view::success($addon->i18n('source_reindexed', rex_request('items', 'int'), rex_request('written', 'int'), rex_request('deleted', 'int')));
+} elseif ('embedded' === $msg) {
+    echo rex_view::success($addon->i18n('search_source_embedded', rex_request('done', 'int'), rex_request('open', 'int')));
+} elseif ('embed_failed' === $msg) {
+    echo rex_view::error($addon->i18n('search_source_embed_failed', rex_request('error', 'string')));
 }
 
 // ---------- Aktionen ----------
-if ($id > 0 && in_array($func, ['delete', 'reindex', 'status'], true)) {
+if ($id > 0 && in_array($func, ['delete', 'reindex', 'status', 'embed'], true)) {
     if (!$csrf->isValid()) {
         echo rex_view::error(rex_i18n::msg('csrf_token_invalid'));
     } else {
@@ -45,6 +54,23 @@ if ($id > 0 && in_array($func, ['delete', 'reindex', 'status'], true)) {
             $source->status = !$source->status;
             $repository->save($source);
             rex_response::sendRedirect(rex_url::currentBackendPage([], false));
+        } elseif ('embed' === $func) {
+            if (!EmbeddingClient::isConfigured()) {
+                echo rex_view::warning($addon->i18n('search_source_no_profile'));
+            } else {
+                // Mit Zeitbudget, nicht bis zum Ende: ein Lauf ueber zehntausend
+                // Abschnitte liefe in das Zeitlimit des Servers, und der Benutzer
+                // bekaeme eine weisse Seite statt einer Meldung. Das Budget richtet
+                // sich nach diesem Limit, siehe Embedder::requestBudget(). Was offen
+                // bleibt, steht in der Meldung, und ein zweiter Klick macht weiter.
+                $result = (new Embedder())->run($source->requireId(), 0, Embedder::requestBudget());
+                rex_response::sendRedirect(rex_url::currentBackendPage(
+                    '' === $result->message
+                        ? ['msg' => 'embedded', 'done' => $result->embedded, 'open' => $result->remaining]
+                        : ['msg' => 'embed_failed', 'error' => $result->message],
+                    false,
+                ));
+            }
         } else {
             try {
                 $result = (new Indexer())->rebuild($source);
@@ -327,24 +353,11 @@ if ('add' === $func || 'edit' === $func) {
     return;
 }
 
-// ---------- Alle aktiven Quellen neu indizieren ----------
-if (rex_post('rebuild_all', 'bool')) {
-    if (!$csrf->isValid()) {
-        echo rex_view::error(rex_i18n::msg('csrf_token_invalid'));
-    } else {
-        $indexer = new Indexer();
-        $count = 0;
-        foreach ($repository->findAll(true) as $source) {
-            try {
-                $indexer->rebuild($source);
-                ++$count;
-            } catch (Throwable $exception) {
-                echo rex_view::error(rex_escape($source->name . ': ' . $exception->getMessage()));
-            }
-        }
-        echo rex_view::success($addon->i18n('status_rebuilt', $count));
-    }
-}
+// Einen Aufbau ueber alle Quellen gibt es hier nicht mehr. Er lief in einer
+// Browseranfrage und damit in deren Zeitlimit: bei Dokumentquellen bedeutet das jedes
+// PDF noch einmal durch pdftotext, und was dabei abbricht, hinterlaesst einen halb
+// aufgebauten Index ohne Meldung. Dafuer gibt es "bin/console search:index" und den
+// Cronjob; eine einzelne Quelle laesst sich weiter ueber das Aktionsmenue neu aufbauen.
 
 // ---------- Liste ----------
 $indexRepository = new IndexRepository();
@@ -378,8 +391,12 @@ $list->setColumnFormat('type_key', 'custom', static function (array $params) use
         return '<span class="text-danger">' . rex_escape((string) $params['value']) . '</span>';
     }
 
+    // Namensraum, Unterart und das Muster der Index-ID stehen hier untereinander, statt
+    // das Muster eine eigene Spalte zu bekommen. Es ist eine Angabe ueber den Typ, und
+    // als Spalte war es die breiteste der Liste.
     return rex_escape($type->getLabel())
-        . '<br><small><code>' . rex_escape($type->getNamespace()) . '</code> / <code>' . rex_escape($type->getType($source)) . '</code></small>';
+        . '<br><small><code>' . rex_escape($type->getNamespace()) . '</code> / <code>' . rex_escape($type->getType($source)) . '</code></small>'
+        . '<br><small class="text-muted text-nowrap"><code>' . rex_escape($type->getIndexIdPattern($source)) . '</code></small>';
 });
 
 $list->addColumn('language', '', 4);
@@ -400,18 +417,23 @@ $list->setColumnFormat('language', 'custom', static function (array $params) use
         : rex_escape(Language::label($language));
 });
 
-$list->addColumn('index_id_pattern', '', 5);
-$list->setColumnLabel('index_id_pattern', $addon->i18n('status_index_id_pattern'));
-$list->setColumnFormat('index_id_pattern', 'custom', static function (array $params) use ($sourcesById) {
-    /** @var rex_list $list */
-    $list = $params['list'];
-    $source = $sourcesById[(int) $list->getValue('id')] ?? null;
-    $type = $source?->getType();
+// Abschnitte und Vektoren je Quelle. Sie stehen nachher in derselben Spalte wie die
+// Dokumente -- es ist dieselbe Frage, nur eine Ebene tiefer: wie viel von dieser Quelle
+// ist angekommen.
+$chunkCounts = [];
+$vectorCounts = [];
+$openCounts = [];
+$vectorSummary = '';
+if (VectorSupport::isAvailable()) {
+    foreach ($sourcesById as $sourceId => $source) {
+        $chunkCounts[$sourceId] = $source->createsChunks() ? (new ChunkRepository())->countBySource($sourceId) : 0;
+    }
+    $vectorCounts = (new VectorStore())->countBySource();
+    $openCounts = (new Embedder())->countOpenBySource();
+    $vectorSummary = $addon->i18n('search_source_vectors_total', array_sum($vectorCounts), array_sum($chunkCounts));
+}
 
-    return null === $source || null === $type ? '' : '<code>' . rex_escape($type->getIndexIdPattern($source)) . '</code>';
-});
-
-$list->addColumn('description', '', 6);
+$list->addColumn('description', '', 5);
 $list->setColumnLabel('description', $addon->i18n('source_description'));
 $list->setColumnFormat('description', 'custom', static function (array $params) use ($sourcesById) {
     /** @var rex_list $list */
@@ -422,7 +444,7 @@ $list->setColumnFormat('description', 'custom', static function (array $params) 
     return null === $source || null === $type ? '' : rex_escape($type->describe($source));
 });
 
-$list->addColumn('filters', '', 7);
+$list->addColumn('filters', '', 6);
 $list->setColumnLabel('filters', $addon->i18n('source_filters'));
 $list->setColumnFormat('filters', 'custom', static function (array $params) use ($addon, $sourcesById) {
     /** @var rex_list $list */
@@ -450,13 +472,37 @@ $list->setColumnFormat('status', 'custom', static function (array $params) use (
 });
 $list->setColumnParams('status', ['func' => 'status', 'id' => '###id###'] + $csrf->getUrlParams());
 
+// Dokumente und Vektoren in einer Spalte: zwei Zeilen statt zweier Spalten. Beide
+// beantworten dieselbe Frage -- wie viel von dieser Quelle ist angekommen --, und
+// nebeneinander kosteten sie Breite, die die Liste nicht hat.
 $list->setColumnLabel('item_count', $addon->i18n('source_documents'));
-$list->setColumnLayout('item_count', ['<th class="text-right">###VALUE###</th>', '<td class="text-right">###VALUE###</td>']);
-$list->setColumnFormat('item_count', 'custom', static function (array $params) use ($indexRepository) {
+$list->setColumnLayout('item_count', ['<th class="text-right">###VALUE###</th>', '<td class="text-right text-nowrap">###VALUE###</td>']);
+$list->setColumnFormat('item_count', 'custom', static function (array $params) use ($addon, $indexRepository, $sourcesById, $chunkCounts, $vectorCounts, $openCounts) {
     /** @var rex_list $list */
     $list = $params['list'];
+    $sourceId = (int) $list->getValue('id');
 
-    return (int) $params['value'] . ' / ' . $indexRepository->countBySource((int) $list->getValue('id'));
+    $html = (int) $params['value'] . ' / ' . $indexRepository->countBySource($sourceId);
+
+    $source = $sourcesById[$sourceId] ?? null;
+    if (null === $source || !VectorSupport::isAvailable()) {
+        return $html;
+    }
+    if (!$source->createsChunks()) {
+        return $html . '<br><small class="text-muted">' . $addon->i18n('search_source_chunks_off') . '</small>';
+    }
+
+    // Zerlegung an, aber nichts dabei herausgekommen -- das ist etwas anderes als "aus",
+    // und es hat immer einen Grund: die Quelle liefert keinen Text.
+    $chunks = $chunkCounts[$sourceId] ?? 0;
+    if (0 === $chunks) {
+        return $html . '<br><small class="text-warning" title="' . rex_escape($addon->i18n('search_source_chunks_empty_notice')) . '">'
+            . '<i class="rex-icon fa-exclamation-triangle"></i> ' . $addon->i18n('search_source_chunks_empty') . '</small>';
+    }
+
+    $vectors = ($vectorCounts[$sourceId] ?? 0) . ' / ' . $chunks . ' ' . $addon->i18n('search_source_vectors_short');
+
+    return $html . '<br><small class="' . (0 < ($openCounts[$sourceId] ?? 0) ? 'text-warning' : 'text-muted') . '">' . $vectors . '</small>';
 });
 
 $list->setColumnLabel('last_indexed_at', $addon->i18n('source_last_indexed'));
@@ -469,20 +515,26 @@ $list->setColumnFormat('last_indexed_at', 'custom', static function (array $para
 });
 
 $list->addColumn('actions', '', -1, ['<th class="rex-table-action">' . $addon->i18n('source_functions') . '</th>', '<td class="rex-table-action">###VALUE###</td>']);
-$list->setColumnFormat('actions', 'custom', static function (array $params) use ($list, $addon, $csrf, $sourcesById) {
+$list->setColumnFormat('actions', 'custom', static function (array $params) use ($list, $addon, $csrf, $sourcesById, $openCounts) {
     $id = (int) $list->getValue('id');
     $source = $sourcesById[$id] ?? null;
 
-    $links = [
-        '<a href="' . $list->getUrl(['func' => 'edit', 'id' => $id]) . '"><i class="rex-icon rex-icon-editmode"></i> ' . $addon->i18n('source_edit') . '</a>',
-        '<a href="' . $list->getUrl(['func' => 'reindex', 'id' => $id] + $csrf->getUrlParams()) . '"><i class="rex-icon fa-refresh"></i> ' . $addon->i18n('source_reindex') . '</a>',
-        '<a href="' . $list->getUrl(['func' => 'status', 'id' => $id] + $csrf->getUrlParams()) . '">'
+    $links = [];
+    $links[] = '<a href="' . $list->getUrl(['func' => 'edit', 'id' => $id]) . '"><i class="rex-icon rex-icon-editmode"></i> ' . $addon->i18n('source_edit') . '</a>';
+    $links[] = '<a href="' . $list->getUrl(['func' => 'reindex', 'id' => $id] + $csrf->getUrlParams()) . '"><i class="rex-icon fa-refresh"></i> ' . $addon->i18n('source_reindex') . '</a>';
+
+    // Nur anbieten, wenn es etwas zu tun gibt -- ein Eintrag, der nichts bewirkt, laesst
+    // einen ratlos zurueck.
+    if (0 < ($openCounts[$id] ?? 0)) {
+        $links[] = '<a href="' . $list->getUrl(['func' => 'embed', 'id' => $id] + $csrf->getUrlParams()) . '"><i class="rex-icon fa-magic"></i> ' . $addon->i18n('search_source_embed') . ' (' . $openCounts[$id] . ')</a>';
+    }
+
+    $links[] = '<a href="' . $list->getUrl(['func' => 'status', 'id' => $id] + $csrf->getUrlParams()) . '">'
             . (null !== $source && $source->status
                 ? '<i class="rex-icon rex-icon-offline"></i> ' . $addon->i18n('source_deactivate')
                 : '<i class="rex-icon rex-icon-online"></i> ' . $addon->i18n('source_activate'))
-            . '</a>',
-        '<a href="' . $list->getUrl(['func' => 'delete', 'id' => $id] + $csrf->getUrlParams()) . '" data-confirm="' . rex_escape($addon->i18n('source_delete_confirm')) . '"><i class="rex-icon rex-icon-delete"></i> ' . $addon->i18n('source_delete') . '</a>',
-    ];
+            . '</a>';
+    $links[] = '<a href="' . $list->getUrl(['func' => 'delete', 'id' => $id] + $csrf->getUrlParams()) . '" data-confirm="' . rex_escape($addon->i18n('source_delete_confirm')) . '"><i class="rex-icon rex-icon-delete"></i> ' . $addon->i18n('source_delete') . '</a>';
 
     // Gleicher Aufbau wie die Aktionsschaltflaeche der YForm-Datenansicht
     return '<div class="dropdown search-dropdown">'
@@ -491,14 +543,11 @@ $list->setColumnFormat('actions', 'custom', static function (array $params) use 
         . '</div>';
 });
 
+// Ohne Schaltflaeche braucht die Liste kein Formular mehr -- die Aktionen sind Links
+// und tragen ihr CSRF-Merkmal in der URL.
 $fragment = new rex_fragment();
-$fragment->setVar('elements', [
-    ['field' => '<button class="btn btn-primary" type="submit" name="rebuild_all" value="1"><i class="rex-icon fa-refresh"></i> ' . $addon->i18n('status_rebuild_all') . '</button>'],
-], false);
-$buttons = $fragment->parse('core/form/submit.php');
-
-$fragment = new rex_fragment();
-$fragment->setVar('title', $addon->i18n('sources') . ' <small>' . $addon->i18n('status_total') . ': ' . $indexRepository->countAll() . ' ' . $addon->i18n('source_documents') . '</small>', false);
+$fragment->setVar('title', $addon->i18n('sources') . ' <small>' . $addon->i18n('status_total') . ': '
+    . $indexRepository->countAll() . ' ' . $addon->i18n('source_documents')
+    . ('' === $vectorSummary ? '' : ', ' . $vectorSummary) . '</small>', false);
 $fragment->setVar('content', $list->get(), false);
-$fragment->setVar('buttons', $buttons, false);
-echo '<form action="' . rex_url::currentBackendPage() . '" method="post">' . $csrf->getHiddenField() . $fragment->parse('core/page/section.php') . '</form>';
+echo $fragment->parse('core/page/section.php');
