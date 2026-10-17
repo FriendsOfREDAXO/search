@@ -70,15 +70,10 @@ final class MarkdownChunkStrategy extends ChunkStrategy
      */
     public static function mergeBelow(array $config): int
     {
-        $value = $config['chunk_merge_below'] ?? null;
-        if (null === $value || '' === (string) $value) {
-            return self::DEFAULT_MERGE_BELOW;
-        }
-
         // 0 schaltet das Zusammenlegen ab: unter null Zeichen ist kein Abschnitt. Nach
         // oben gilt dieselbe Grenze wie fuer die Abschnittsgroesse -- darueber haette
         // die Zahl ohnehin keine Wirkung mehr, weil die zweite Bedingung greift.
-        return min(8000, max(0, (int) $value));
+        return min(8000, max(0, FixedChunkStrategy::number($config, 'chunk_merge_below', self::DEFAULT_MERGE_BELOW)));
     }
 
     public function split(ChunkInput $input, array $config): array

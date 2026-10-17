@@ -77,7 +77,7 @@ final class FixedChunkStrategy extends ChunkStrategy
      */
     public static function size(array $config): int
     {
-        $size = (int) ($config['chunk_size'] ?? self::DEFAULT_SIZE);
+        $size = self::number($config, 'chunk_size', self::DEFAULT_SIZE);
 
         // Unter 200 Zeichen zerfaellt jeder Absatz, ueber 8000 passt ein Stueck nicht
         // mehr in das Kontextfenster einer Antwort. Beides faengt die Eingabe ab, statt
@@ -90,6 +90,27 @@ final class FixedChunkStrategy extends ChunkStrategy
      */
     public static function overlap(array $config): int
     {
-        return max(0, (int) ($config['chunk_overlap'] ?? self::DEFAULT_OVERLAP));
+        return max(0, self::number($config, 'chunk_overlap', self::DEFAULT_OVERLAP));
+    }
+
+    /**
+     * Eine Zahl aus der Konfiguration, leeres Feld heisst Vorgabe.
+     *
+     * Oeffentlich, weil {@see MarkdownChunkStrategy} dieselbe Frage fuer sein eigenes
+     * Feld stellt. "Leer heisst Vorgabe" soll an einer Stelle entschieden werden.
+     *
+     * Ohne die Unterscheidung wird ein geleertes Feld zu (int) '' und damit zu 0: die
+     * Abschnittsgroesse faellt auf ihre Untergrenze von 200 Zeichen, die Ueberlappung auf
+     * null. Das ist nicht, was jemand meint, der ein Feld leert -- gemeint ist "nimm den
+     * Standardwert", und genau so steht es auch an den Feldern. Eine ausdrueckliche 0
+     * bleibt davon unberuehrt: sie ist bei der Ueberlappung eine gueltige Angabe.
+     *
+     * @param array<string, mixed> $config
+     */
+    public static function number(array $config, string $key, int $default): int
+    {
+        $value = $config[$key] ?? null;
+
+        return null === $value || '' === trim((string) $value) ? $default : (int) $value;
     }
 }

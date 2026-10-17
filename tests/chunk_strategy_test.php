@@ -183,6 +183,28 @@ final class rex_search_chunk_strategy_test extends TestCase
         }
     }
 
+    /**
+     * Ein geleertes Feld heisst "nimm den Standardwert", nicht "nimm die Untergrenze".
+     * Vorher wurde (int) '' zu 0, die Abschnittsgroesse fiel damit auf 200 Zeichen und
+     * die Ueberlappung auf null -- lautlos, und erst an winzigen Abschnitten zu merken.
+     */
+    public function testAnEmptySizeFieldMeansTheDefaultNotTheLowerBound(): void
+    {
+        self::assertSame(FixedChunkStrategy::DEFAULT_SIZE, FixedChunkStrategy::size(['chunk_size' => '']));
+        self::assertSame(FixedChunkStrategy::DEFAULT_SIZE, FixedChunkStrategy::size(['chunk_size' => '   ']));
+        self::assertSame(FixedChunkStrategy::DEFAULT_SIZE, FixedChunkStrategy::size(['chunk_size' => null]));
+        self::assertSame(FixedChunkStrategy::DEFAULT_SIZE, FixedChunkStrategy::size([]));
+    }
+
+    public function testAnEmptyOverlapFieldMeansTheDefaultButAnExplicitZeroStays(): void
+    {
+        // Die 0 ist bei der Ueberlappung eine gueltige Angabe -- sie schaltet sie ab.
+        // Sie darf deshalb nicht wie ein leeres Feld behandelt werden.
+        self::assertSame(FixedChunkStrategy::DEFAULT_OVERLAP, FixedChunkStrategy::overlap(['chunk_overlap' => '']));
+        self::assertSame(0, FixedChunkStrategy::overlap(['chunk_overlap' => '0']));
+        self::assertSame(0, FixedChunkStrategy::overlap(['chunk_overlap' => 0]));
+    }
+
     public function testAnEmptyOrAbsurdValueFallsBackToTheDefault(): void
     {
         self::assertSame(MarkdownChunkStrategy::DEFAULT_MERGE_BELOW, MarkdownChunkStrategy::mergeBelow([]));
