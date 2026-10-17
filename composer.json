@@ -1,5 +1,10 @@
 {
+    "name": "friendsofredaxo/search",
+    "description": "Suche für REDAXO: Volltext über frei konfigurierbare Quellen, wahlweise mit semantischer Suche über Vektoren.",
+    "type": "redaxo-addon",
+    "license": "MIT",
     "require": {
+        "php": ">=8.1",
         "league/html-to-markdown": "^5.1",
         "loupe/matcher": "^0.4.1",
         "smalot/pdfparser": "^2.12",
@@ -7,6 +12,9 @@
     },
     "config": {
         "optimize-autoloader": true,
-        "sort-packages": true
+        "sort-packages": true,
+        "platform": {
+            "php": "8.1.0"
+        }
     }
 }

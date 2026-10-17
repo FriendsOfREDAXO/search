@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 – 2026-10-18
+
+Behebt die Installation über Composer auf PHP 8.1 und 8.2.
+
+- `composer.json` nennt jetzt selbst `php >=8.1` und legt die Plattform darauf fest. Vorher stand die Untergrenze nur in der `package.yml`, und das Lockfile hatte sich `joomla/string 4.0.0` herangezogen – eine Fassung, die PHP 8.3 verlangt. Auf PHP 8.1 und 8.2 brach `composer install` damit ab. Ersetzt durch `joomla/string 3.0.4`; betroffen sind nur UTF-8-Hilfsfunktionen des Stemmers, alle 14 Sprachen liefern unveränderte Stammformen.
+- `composer.json` hat Name, Beschreibung, Typ und Lizenz bekommen und besteht `composer validate --strict`.
+- Die CI prüft das jetzt: ein Job installiert die Abhängigkeiten auf PHP 8.1, der kleinsten unterstützten Fassung.
+
 ## 0.2.0 – 2026-10-17
 
 Erste veröffentlichte Fassung.
