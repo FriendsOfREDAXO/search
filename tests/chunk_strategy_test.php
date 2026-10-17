@@ -137,6 +137,69 @@ final class rex_search_chunk_strategy_test extends TestCase
         self::assertStringContainsString('Hier steht mehr Text.', $chunks[0]->text);
     }
 
+    /**
+     * Die Zahl haengt am Inhalt, deshalb steht sie je Quelle zur Verfuegung: dieselben
+     * zwei Abschnitte bleiben getrennt, wenn die Quelle kurze Abschnitte will.
+     */
+    public function testASourceCanKeepSmallSectionsApart(): void
+    {
+        $input = $this->markdown('', "# Kurz\n\nZwei Worte.\n\n## Danach\n\n" . str_repeat('Hier steht mehr Text. ', 30));
+
+        $chunks = (new MarkdownChunkStrategy())->split($input, ['chunk_merge_below' => '5']);
+
+        self::assertCount(2, $chunks);
+        self::assertSame('Kurz', $chunks[0]->headingPath);
+    }
+
+    public function testZeroSwitchesMergingOff(): void
+    {
+        $input = $this->markdown('', "# Kurz\n\nZwei Worte.\n\n## Danach\n\n" . str_repeat('Hier steht mehr Text. ', 30));
+
+        self::assertCount(2, (new MarkdownChunkStrategy())->split($input, ['chunk_merge_below' => '0']));
+    }
+
+    public function testAHigherValueMergesWhatTheDefaultWouldKeepApart(): void
+    {
+        // Beide Abschnitte liegen ueber der Vorgabe von 300 Zeichen und blieben damit
+        // getrennt; zusammen passen sie noch in die Abschnittsgroesse.
+        $text = str_repeat('Ein Satz von einiger Laenge steht hier. ', 10);
+        $input = $this->markdown('', "# Eins\n\n$text\n\n## Zwei\n\n$text");
+
+        self::assertCount(2, (new MarkdownChunkStrategy())->split($input, ['chunk_size' => '2000']));
+        self::assertCount(1, (new MarkdownChunkStrategy())->split($input, ['chunk_size' => '2000', 'chunk_merge_below' => '600']));
+    }
+
+    /**
+     * Auch mit einer sehr grossen Zahl entsteht kein ueberlanger Abschnitt: die zweite
+     * Bedingung -- das Ergebnis muss in die Abschnittsgroesse passen -- bleibt.
+     */
+    public function testMergingNeverExceedsTheSectionSize(): void
+    {
+        $text = str_repeat('Ein Satz von einiger Laenge steht hier. ', 10);
+        $input = $this->markdown('', "# Eins\n\n$text\n\n## Zwei\n\n$text\n\n### Drei\n\n$text");
+
+        foreach ((new MarkdownChunkStrategy())->split($input, ['chunk_size' => '600', 'chunk_merge_below' => '8000']) as $chunk) {
+            self::assertLessThanOrEqual(600, mb_strlen($chunk->text));
+        }
+    }
+
+    public function testAnEmptyOrAbsurdValueFallsBackToTheDefault(): void
+    {
+        self::assertSame(MarkdownChunkStrategy::DEFAULT_MERGE_BELOW, MarkdownChunkStrategy::mergeBelow([]));
+        self::assertSame(MarkdownChunkStrategy::DEFAULT_MERGE_BELOW, MarkdownChunkStrategy::mergeBelow(['chunk_merge_below' => '']));
+        self::assertSame(0, MarkdownChunkStrategy::mergeBelow(['chunk_merge_below' => '-20']));
+        self::assertSame(8000, MarkdownChunkStrategy::mergeBelow(['chunk_merge_below' => '99999']));
+    }
+
+    public function testTheFieldIsOfferedOnlyWhereItHasAnEffect(): void
+    {
+        // Bei fester Groesse gibt es keine Gliederung und damit nichts zusammenzulegen.
+        $keys = static fn (array $fields): array => array_map(static fn ($f): string => $f->name, $fields);
+
+        self::assertContains('chunk_merge_below', $keys((new MarkdownChunkStrategy())->getConfigFields([])));
+        self::assertNotContains('chunk_merge_below', $keys((new FixedChunkStrategy())->getConfigFields([])));
+    }
+
     public function testAHashInACodeBlockIsNoHeading(): void
     {
         $lang = str_repeat('Erläuterung dazu an dieser Stelle. ', 20);
