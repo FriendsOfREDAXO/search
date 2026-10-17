@@ -23,8 +23,13 @@ use function count;
  * Textausschnitt des Treffers, und die uebrigen haengen als Liste am Treffer. Ohne sie
  * stuende bei einem Treffer, den nur die Bedeutung gefunden hat, der Anfang des Dokuments
  * -- und niemand saehe, warum er in der Liste steht.
+ *
+ * Nicht final, und Abfrage wie Einbettung liegen hinter eigenen Methoden: beide brauchen
+ * eine Datenbank mit Vektorunterstuetzung und einen bezahlten Dienst, die Entscheidungen
+ * dazwischen aber nicht. Ohne diese Naht waere genau der Teil ungetestet, der die
+ * Trefferliste bestimmt.
  */
-final class SemanticSearch
+class SemanticSearch
 {
     /**
      * So viele Abschnitte eines Dokuments kommen mit.
@@ -65,35 +70,8 @@ final class SemanticSearch
             return [];
         }
 
-        $where = [];
-        $params = ['q' => $vector];
-        foreach ($filters as $column => $values) {
-            $names = [];
-            foreach (array_values($values) as $i => $value) {
-                $name = 'f' . count($params) . '_' . $i;
-                $names[] = ':' . $name;
-                $params[$name] = $value;
-            }
-            $where[] = $column . ' IN (' . implode(', ', $names) . ')';
-        }
-
-        // Mehr Abschnitte holen als Dokumente gewuenscht sind: mehrere Abschnitte
-        // desselben Dokuments fallen beim Zusammenfassen zu einem zusammen, und bei
-        // einem PDF mit siebenhundert Abschnitten sind das schnell alle.
-        $rows = rex_sql::factory()->getArray(
-            'SELECT c.id AS chunk_id, c.document_id, c.content, c.heading_path, c.chunk_no, c.chunk_total,'
-            . ' i.namespace, i.item_id, i.type, i.source_id, i.clang_id, i.language,'
-            . ' VEC_DISTANCE_COSINE(v.embedding, VEC_FromText(:q)) AS distance'
-            . ' FROM ' . VectorStore::table() . ' v'
-            . ' JOIN ' . ChunkRepository::table() . ' c ON c.id = v.chunk_id'
-            . ' JOIN ' . IndexRepository::table() . ' i ON i.id = c.document_id'
-            . ([] === $where ? '' : ' WHERE ' . implode(' AND ', $where))
-            . ' ORDER BY distance LIMIT ' . max(1, $limit * 5),
-            $params,
-        );
-
         $documents = [];
-        foreach ($rows as $row) {
+        foreach ($this->readRows($vector, $filters, $limit) as $row) {
             $similarity = 1.0 - (float) $row['distance'];
             if ($similarity < $minSimilarity) {
                 // Nach Abstand sortiert, ab hier wird es nur schlechter.
@@ -152,11 +130,59 @@ final class SemanticSearch
     }
 
     /**
+     * Die aehnlichsten Abschnitte, nach Abstand sortiert, bester zuerst.
+     *
+     * @param array<string, list<int|string>> $filters Spalte auf erlaubte Werte
+     * @return list<array<string, mixed>>
+     */
+    protected function readRows(string $vector, array $filters, int $limit): array
+    {
+        $where = [];
+        $params = ['q' => $vector];
+        foreach ($filters as $column => $values) {
+            $names = [];
+            foreach (array_values($values) as $i => $value) {
+                $name = 'f' . count($params) . '_' . $i;
+                $names[] = ':' . $name;
+                $params[$name] = $value;
+            }
+            $where[] = $column . ' IN (' . implode(', ', $names) . ')';
+        }
+
+        // Mehr Abschnitte holen als Dokumente gewuenscht sind: mehrere Abschnitte
+        // desselben Dokuments fallen beim Zusammenfassen zu einem zusammen, und bei
+        // einem PDF mit siebenhundert Abschnitten sind das schnell alle.
+        return rex_sql::factory()->getArray(
+            'SELECT c.id AS chunk_id, c.document_id, c.content, c.heading_path, c.chunk_no, c.chunk_total,'
+            . ' i.namespace, i.item_id, i.type, i.source_id, i.clang_id, i.language,'
+            . ' VEC_DISTANCE_COSINE(v.embedding, VEC_FromText(:q)) AS distance'
+            . ' FROM ' . VectorStore::table() . ' v'
+            . ' JOIN ' . ChunkRepository::table() . ' c ON c.id = v.chunk_id'
+            . ' JOIN ' . IndexRepository::table() . ' i ON i.id = c.document_id'
+            . ([] === $where ? '' : ' WHERE ' . implode(' AND ', $where))
+            . ' ORDER BY distance LIMIT ' . max(1, $limit * 5),
+            $params,
+        );
+    }
+
+    /**
+     * Das eingestellte Embedding-Profil.
+     *
+     * Eigene Methode, weil die Auskunft aus einem anderen AddOn kommt: ohne sie liesse
+     * sich {@see vectorFor()} nur auf einer Installation pruefen, auf der ai_platform
+     * eingerichtet ist.
+     */
+    protected function profileId(): ?int
+    {
+        return EmbeddingClient::getProfileId();
+    }
+
+    /**
      * Der Vektor zu einer Frage, aus dem Zwischenspeicher oder frisch.
      */
-    private function vectorFor(string $question): ?string
+    protected function vectorFor(string $question): ?string
     {
-        $profileId = EmbeddingClient::getProfileId();
+        $profileId = $this->profileId();
         if (null === $profileId || '' === trim($question)) {
             return null;
         }
