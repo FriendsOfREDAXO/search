@@ -38,3 +38,122 @@ jobs:
           coverage: none
       - run: composer validate --strict
       - run: composer install --no-progress --no-interaction
+
+  tests:
+    name: Tests auf PHP ${{ matrix.php }}
+    # Die Testsuite braucht ein lauffaehiges REDAXO: ihr Bootstrap startet den Kern und
+    # laedt die Pakete. Deshalb wird hier der Kern danebengelegt, eingerichtet und das
+    # AddOn hineinkopiert -- genau so, wie es spaeter auch installiert ist.
+    #
+    # Nicht auf 8.1, obwohl das AddOn es unterstuetzt: REDAXOs *Entwicklungswerkzeuge*
+    # verlangen 8.3 (phpunit ^12.5 und redaxo/php-cs-fixer-config ^8.3), der Kern selbst
+    # laeuft weiter auf 8.1. Unter 8.1 laesst sich die Suite damit gar nicht starten.
+    # Was dadurch ungedeckt bleibt: ein Aufruf, den es erst ab 8.2 gibt, faellt hier
+    # nicht auf. Die Syntaxpruefung deckt 8.1 bis 8.4 ab, der Composer-Job die
+    # Abhaengigkeiten auf 8.1.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.3', '8.4']
+    services:
+      mariadb:
+        image: mariadb:11.7
+        env:
+          MARIADB_ROOT_PASSWORD: redaxo
+          MARIADB_DATABASE: redaxo
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - name: AddOn auschecken
+        uses: actions/checkout@v4
+        with:
+          path: addon
+
+      - name: REDAXO auschecken
+        uses: actions/checkout@v4
+        with:
+          repository: redaxo/redaxo
+          ref: 5.21.5
+          path: core
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: intl, mbstring, zip, dom, pdo_mysql
+          coverage: none
+
+      - name: Werkzeuge des Kerns installieren
+        working-directory: core
+        run: composer install --no-progress --no-interaction
+
+      - name: AddOn an seinen Platz legen
+        run: mv addon core/redaxo/src/addons/search
+
+      - name: REDAXO einrichten
+        working-directory: core
+        run: |
+          php redaxo/bin/console setup:run \
+            --lang=de_de \
+            --agree-license \
+            --server="http://localhost/" \
+            --servername="CI" \
+            --error-email="ci@example.org" \
+            --timezone="Europe/Berlin" \
+            --db-host=127.0.0.1 \
+            --db-login=root \
+            --db-password=redaxo \
+            --db-name=redaxo \
+            --db-createdb=no \
+            --db-setup=normal \
+            --db-charset=utf8mb4 \
+            --admin-username=ci \
+            --admin-password="$(openssl rand -base64 24)"
+
+      - name: AddOn installieren
+        working-directory: core
+        # Ob install() schon aktiviert, haengt an der Kernfassung. Statt das zu raten,
+        # wird beides versucht und danach der Zustand geprueft -- die Pruefung ist das
+        # Tor, nicht die Rueckgabe der Befehle.
+        run: |
+          php redaxo/bin/console package:install search
+          php redaxo/bin/console package:activate search || true
+          php redaxo/bin/console package:list \
+            | grep -E '^[[:space:]]+search[[:space:]]' \
+            | grep -E 'yes[[:space:]]+yes' \
+            || { echo "AddOn ist nicht installiert und aktiv:"; php redaxo/bin/console package:list | grep -E '^[[:space:]]+search[[:space:]]'; exit 1; }
+
+      - name: Eigene PHPUnit-Konfiguration
+        # Nicht die des Kerns: deren <source>-Block ist auf dessen PHPUnit-Fassung
+        # zugeschnitten und laesst den Lauf an einer Schema-Warnung scheitern. Hier
+        # steht nur, was fuer diese Testsuite noetig ist.
+        working-directory: core
+        run: |
+          cat > phpunit.ci.xml <<'XML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+              bootstrap=".tools/bootstrap.php"
+              failOnWarning="true"
+              failOnRisky="true"
+              failOnEmptyTestSuite="true"
+              colors="true"
+              stderr="true"
+              cacheDirectory=".tools/.cache/phpunit"
+          >
+              <testsuites>
+                  <testsuite name="search">
+                      <directory suffix="_test.php">redaxo/src/addons/search/tests</directory>
+                  </testsuite>
+              </testsuites>
+          </phpunit>
+          XML
+
+      - name: Tests
+        working-directory: core
+        run: vendor/bin/phpunit -c phpunit.ci.xml
