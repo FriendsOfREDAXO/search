@@ -27,7 +27,7 @@ final class RankFusion
      * der seither ueberall steht: der erste Platz zaehlt 1/61, der zehnte 1/70 -- also
      * knapp ein Siebtel weniger und nicht ein Zehntel.
      */
-    public const K = 1;
+    public const K = 60;
 
     /**
      * @param array<string, list<string>> $lists Name der Liste auf ihre Schluessel, bester zuerst
