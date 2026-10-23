@@ -178,7 +178,20 @@ class SemanticSearch
     }
 
     /**
+     * Die Anweisung vor der Frage, siehe {@see EmbeddingClient::getQueryInstruction()}.
+     *
+     * Eigene Methode aus demselben Grund wie {@see profileId()}.
+     */
+    protected function queryInstruction(): string
+    {
+        return EmbeddingClient::getQueryInstruction();
+    }
+
+    /**
      * Der Vektor zu einer Frage, aus dem Zwischenspeicher oder frisch.
+     *
+     * Gemerkt wird er unter dem Text samt Anweisung: mit einer anderen Anweisung liegt
+     * dieselbe Frage woanders.
      */
     protected function vectorFor(string $question): ?string
     {
@@ -187,6 +200,7 @@ class SemanticSearch
             return null;
         }
 
+        $question = EmbeddingClient::queryText($question, $this->queryInstruction());
         $cached = $this->cache->get($question, $profileId);
         if (null !== $cached) {
             return $cached;

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unveröffentlicht
+
+- Neue Einstellung *Anweisung vor Suchanfragen* neben dem Embedding-Profil. Der Text steht vor jeder Frage, bevor sie eingebettet wird, nicht vor den Dokumenten. Modelle wie Qwen3-Embedding erwarten das und treffen ohne schlechter. Hybride Suche und Passagen-API nutzen dieselbe Anweisung; gemerkte Fragevektoren gelten nur für die Anweisung, mit der sie entstanden sind. Vorgabe ist leer, es bleibt also alles wie bisher.
+
 ## 0.2.1 – 2026-10-18
 
 Behebt die Installation über Composer auf PHP 8.1 und 8.2.

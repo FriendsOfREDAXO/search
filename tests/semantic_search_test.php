@@ -46,6 +46,9 @@ final class rex_search_embedding_client_double extends EmbeddingClient
 {
     public int $calls = 0;
 
+    /** @var list<string> */
+    public array $texts = [];
+
     /** @param list<list<float>>|null $answer null heisst: der Dienst faellt aus */
     public function __construct(
         private readonly ?array $answer = [[0.1, 0.2]],
@@ -54,6 +57,7 @@ final class rex_search_embedding_client_double extends EmbeddingClient
     public function embed(array $texts): array
     {
         ++$this->calls;
+        $this->texts = [...$this->texts, ...$texts];
         if (null === $this->answer) {
             throw new EmbeddingException('Dienst nicht erreichbar.');
         }
@@ -84,6 +88,8 @@ final class rex_search_semantic_vector_double extends SemanticSearch
 {
     public ?int $profile = 16;
 
+    public string $instruction = '';
+
     public function vectorForQuestion(string $question): ?string
     {
         return $this->vectorFor($question);
@@ -92,6 +98,11 @@ final class rex_search_semantic_vector_double extends SemanticSearch
     protected function profileId(): ?int
     {
         return $this->profile;
+    }
+
+    protected function queryInstruction(): string
+    {
+        return $this->instruction;
     }
 }
 
@@ -314,6 +325,42 @@ final class rex_search_semantic_search_test extends TestCase
 
         self::assertSame(1, $client->calls);
         self::assertSame($vektor, $cache->entries["neue Frage\0" . 16]);
+    }
+
+    public function testTheInstructionGoesInFrontOfTheQuestion(): void
+    {
+        $client = new rex_search_embedding_client_double([[0.1, 0.2]]);
+        $search = $this->vectorSearch($client, new rex_search_query_vector_cache_double());
+        $search->instruction = "Instruct: Finde passende Abschnitte\nQuery:";
+
+        $search->vectorForQuestion('neue Frage');
+
+        self::assertSame(["Instruct: Finde passende Abschnitte\nQuery:neue Frage"], $client->texts);
+    }
+
+    /**
+     * Mit einer anderen Anweisung liegt dieselbe Frage woanders. Ein Vektor von vorher
+     * darf deshalb nicht wieder herauskommen.
+     */
+    public function testAQuestionIsRememberedTogetherWithItsInstruction(): void
+    {
+        $client = new rex_search_embedding_client_double([[0.1, 0.2]]);
+        $cache = new rex_search_query_vector_cache_double();
+        $cache->entries["gemerkte Frage\0" . 16] = '[0.5,0.5]';
+        $search = $this->vectorSearch($client, $cache);
+        $search->instruction = 'query: ';
+
+        $vektor = $search->vectorForQuestion('gemerkte Frage');
+
+        self::assertSame(1, $client->calls);
+        self::assertNotSame('[0.5,0.5]', $vektor);
+        self::assertSame($vektor, $cache->entries["query: gemerkte Frage\0" . 16]);
+    }
+
+    public function testAnEmptyInstructionLeavesTheQuestionAsItIs(): void
+    {
+        self::assertSame('Frage', EmbeddingClient::queryText('Frage', ''));
+        self::assertSame("Anweisung\nQuery: Frage", EmbeddingClient::queryText('Frage', "Anweisung\nQuery: "));
     }
 
     /**

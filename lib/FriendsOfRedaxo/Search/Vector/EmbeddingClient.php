@@ -102,6 +102,31 @@ class EmbeddingClient
     }
 
     /**
+     * Die Anweisung vor jeder Suchanfrage, leer fuer keine.
+     *
+     * Manche Modelle betten Anfrage und Dokument verschieden ein: Qwen3-Embedding etwa
+     * erwartet vor der Anfrage eine Aufgabenbeschreibung, vor den Dokumenten keine, und
+     * verliert ohne sie nach eigener Angabe ein bis fuenf Prozent. Aus dem Modellnamen
+     * hergeleitet wird sie nicht: welche Anweisung passt, steht in der Beschreibung des
+     * Modells, und derselbe Name kann bei einem anderen Anbieter ein anderes Modell sein.
+     */
+    public static function getQueryInstruction(): string
+    {
+        return (string) rex_config::get('search', 'embedding_query_instruction', '');
+    }
+
+    /**
+     * Der Text, der fuer eine Suchanfrage eingebettet wird: Anweisung, dann Anfrage.
+     *
+     * Ohne Trennzeichen dazwischen, das gehoert zur Anweisung. Qwen3 etwa schliesst sie
+     * mit einem Zeilenumbruch und "Query:" ab.
+     */
+    public static function queryText(string $question, ?string $instruction = null): string
+    {
+        return ($instruction ?? self::getQueryInstruction()) . $question;
+    }
+
+    /**
      * Vektoren zu Texten, in der Reihenfolge der Eingabe.
      *
      * @param list<string> $texts

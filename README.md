@@ -662,6 +662,31 @@ Volltextsuche. Deshalb merkt sich `rex_search_query_vector` die Vektoren schon g
 – bei einem Suchfeld auf einer Website wiederholen sich Begriffe stark. Mit warmem
 Zwischenspeicher kostet die Bedeutung noch rund **30 ms** Aufschlag.
 
+### Anweisung vor der Anfrage
+
+Manche Modelle betten Anfrage und Dokument verschieden ein. Sie erwarten vor der Anfrage eine
+Anweisung, was gesucht wird, vor den Dokumenten aber keine. Qwen3-Embedding gehört dazu und
+verliert ohne sie nach eigener Angabe ein bis fünf Prozent. Unter *Suche → Einstellungen* steht
+dafür neben dem Profil das Feld *Anweisung vor Suchanfragen*. Für Qwen3-Embedding sind das zwei
+Zeilen:
+
+```
+Instruct: Given a web search query, retrieve relevant passages that answer the query
+Query:
+```
+
+Der Text steht unverändert vor jeder Frage, ohne Trennzeichen dazwischen; Leerzeichen und
+Umbrüche am Ende bleiben erhalten. Er gilt für die hybride Suche wie für die Passagen-API.
+
+Aus dem Modellnamen hergeleitet wird die Anweisung nicht. Welche passt, steht in der
+Beschreibung des Modells, und derselbe Name kann bei einem anderen Anbieter ein anderes Modell
+sein. Modelle, die auch vor den Dokumenten etwas erwarten, etwa `passage:` bei E5, deckt das Feld
+nicht ab.
+
+Eine Änderung lässt die Vektoren der Dokumente stehen, sie gilt ja nur für Anfragen. Verworfen
+werden die gemerkten Vektoren gestellter Fragen. **Die Ähnlichkeiten verschieben sich dabei**:
+die Schwelle gehört danach geprüft wie nach einem Profilwechsel.
+
 ### Die Schwelle
 
 Eine Nachbarsuche kennt kein „nichts gefunden": sie liefert immer die nächsten Abschnitte, egal

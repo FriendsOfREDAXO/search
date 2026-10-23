@@ -23,9 +23,22 @@ if ('' !== rex_post('action', 'string')) {
         $store = new VectorStore();
         $before = (int) rex_config::get('search', 'embedding_profile', 0);
         $after = rex_post('embedding_profile', 'int', 0);
+        // Leerzeichen und Umbrueche am Ende bleiben: sie gehoeren zur Anweisung.
+        $instruction = str_replace("\r\n", "\n", rex_post('embedding_query_instruction', 'string', ''));
+        $instruction = '' === trim($instruction) ? '' : $instruction;
+        $instructionChanged = $instruction !== EmbeddingClient::getQueryInstruction();
+        if ($instructionChanged) {
+            // Die Dokumentvektoren bleiben, die Anweisung gilt nur fuer Anfragen. Die
+            // gemerkten Fragevektoren tragen sie im Schluessel; sie gehen trotzdem, aus
+            // demselben Grund wie beim Profilwechsel.
+            rex_config::set('search', 'embedding_query_instruction', $instruction);
+            (new QueryVectorCache())->clear();
+        }
 
         if ($before === $after) {
-            echo rex_view::info($addon->i18n('search_settings_embedding_unchanged'));
+            echo $instructionChanged
+                ? rex_view::success($addon->i18n('search_settings_embedding_instruction_saved'))
+                : rex_view::info($addon->i18n('search_settings_embedding_unchanged'));
         } else {
             // Vektoren verschiedener Modelle sind nicht vergleichbar -- selbst bei
             // gleicher Laenge legt ein anderes Modell denselben Text woanders hin. Ein
@@ -118,7 +131,7 @@ $fragment->setVar('footer', '<p class="help-block">' . $addon->i18n('search_sett
 echo $fragment->parse('core/page/section.php');
 
 echo $section($addon->i18n('search_settings_languages'), Diagnosis::languages());
-// Semantische Suche: Befunde plus die einzige Einstellung, die es hier gibt.
+// Semantische Suche: Befunde plus die einzigen Einstellungen, die es hier gibt.
 $vectorFooter = '';
 if (VectorSupport::isAvailable()) {
     $profiles = EmbeddingClient::getProfiles();
@@ -140,6 +153,11 @@ if (VectorSupport::isAvailable()) {
             'label' => '<label for="search-embedding-profile">' . $addon->i18n('search_settings_embedding_profile') . '</label>',
             'field' => $select->get(),
             'note' => $addon->i18n('search_settings_embedding_profile_notice'),
+        ], [
+            'label' => '<label for="search-embedding-query-instruction">' . $addon->i18n('search_settings_embedding_instruction') . '</label>',
+            'field' => '<textarea class="form-control" rows="2" id="search-embedding-query-instruction" name="embedding_query_instruction">'
+                . rex_escape(EmbeddingClient::getQueryInstruction()) . '</textarea>',
+            'note' => $addon->i18n('search_settings_embedding_instruction_notice'),
         ]], false);
 
         $vectorFooter = '<form action="' . rex_url::currentBackendPage() . '" method="post">'
