@@ -1,5 +1,10 @@
 # Changelog
 
+## Unveröffentlicht
+
+- Treffer, die über die Bedeutung gefunden wurden, zeigen im Ausschnitt Klartext statt Markdown. Bisher stand dort der Abschnitt so, wie er gespeichert ist, mit `##`, `**` und `[Link](/ziel/)`.
+- Der Klartext aus Markdown ist sauberer. Neu entfernt werden Überschriften in Listenpunkten (`- ### [Titel](/ziel/)`) und hinter Bildern, Autolinks wie `<mail@example.org>`, maskierte Klammern in Linktexten, verschachteltes Fett, die Trennstriche verschachtelter Tabellen aus Mailings und die Reste von Links, die das Teilen eines langen Abschnitts durchschnitten hat. Im Volltextindex wirkt das nach dem nächsten Indexlauf.
+
 ## 0.2.1 – 2026-10-18
 
 Behebt die Installation über Composer auf PHP 8.1 und 8.2.

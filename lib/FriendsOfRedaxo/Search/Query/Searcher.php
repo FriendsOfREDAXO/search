@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace FriendsOfRedaxo\Search\Query;
 
 use DateTimeImmutable;
+use FriendsOfRedaxo\Search\Markdown;
 use FriendsOfRedaxo\Search\Vector\SemanticSearch;
 use FriendsOfRedaxo\Search\Word\WordExpander;
 use FriendsOfRedaxo\Search\Word\WordRepository;
@@ -451,9 +452,10 @@ final class Searcher
     {
         // Hat die Bedeutung den Treffer gebracht, zeigt der Ausschnitt den Abschnitt,
         // der dafuer gesorgt hat -- die Suche nach der Fundstelle liefe hier ins Leere,
-        // weil keines der Suchwoerter im Text steht.
+        // weil keines der Suchwoerter im Text steht. Abschnitte sind Markdown, der
+        // Ausschnitt ist Klartext wie beim Volltext.
         if (isset($candidate['snippet'])) {
-            $window = (string) $candidate['snippet'];
+            $window = Markdown::toPlainText((string) $candidate['snippet']);
             $cutAtStart = false;
         } else {
             $window = (string) ($row['snippet_window'] ?? '');

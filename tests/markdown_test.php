@@ -90,6 +90,83 @@ final class rex_search_markdown_test extends TestCase
         );
     }
 
+    public function testPlainTextDropsAHeadingInsideAListItem(): void
+    {
+        // Eine Kachelliste: jeder Punkt eine verlinkte Ueberschrift.
+        self::assertSame(
+            'Heizkosten senken',
+            Markdown::toPlainText('- ### [Heizkosten senken](/buergerinnen-und-buerger/heizkosten-senken/)'),
+        );
+    }
+
+    public function testPlainTextUnwrapsAutolinks(): void
+    {
+        self::assertSame(
+            'Fragen gerne unter solar@lea-hessen.de.',
+            Markdown::toPlainText('Fragen gerne unter <solar@lea-hessen.de>.'),
+        );
+        self::assertSame('Siehe https://example.org/', Markdown::toPlainText('Siehe <https://example.org/>'));
+    }
+
+    public function testPlainTextSeparatesAnAutolinkFromTheTextBefore(): void
+    {
+        self::assertSame(
+            '+49 611 95017 8649 evelyn.kierek@lea-hessen.de',
+            Markdown::toPlainText('+49 611 95017 8649<evelyn.kierek@lea-hessen.de>'),
+        );
+    }
+
+    public function testPlainTextDropsAHeadingBehindAnImage(): void
+    {
+        self::assertSame(
+            'Passivhaus im Bestand Kostenplan',
+            Markdown::toPlainText('- ![](/media/publikationen-nopic-small.png) ## Passivhaus im Bestand Kostenplan'),
+        );
+    }
+
+    public function testPlainTextKeepsEscapedBracketsInsideALink(): void
+    {
+        self::assertSame(
+            'Merkblatt zur Digitalisierung [PDF]',
+            Markdown::toPlainText('[**Merkblatt zur Digitalisierung \\[PDF\\]**](https://www.wibank.de/merkblatt.pdf)'),
+        );
+    }
+
+    public function testPlainTextDropsNestedBold(): void
+    {
+        // So setzt der Konverter ein <strong> in einem <strong> um.
+        self::assertSame(
+            'Energie sparen und Klimaschutz fördern',
+            Markdown::toPlainText('**Energie sparen **und Klimaschutz fördern****'),
+        );
+    }
+
+    public function testPlainTextCleansAPieceCutOutOfALink(): void
+    {
+        // Ein zu langer Abschnitt wird nach Zeichen geteilt, auch mitten in einem Link.
+        self::assertSame(
+            'Sprechstunde Online Mittwoch',
+            Markdown::toPlainText('Sprechstunde Online](/termine/sprechstunde-2026) Mittwoch'),
+        );
+        self::assertSame(
+            'Solarenergie Fördervereins e.V. Erleichterungen',
+            Markdown::toPlainText('Solarenergie Fördervereins e.V.](https://www.sfv.de/solarbrief "Externer Link") Erleichterungen'),
+        );
+        self::assertSame(
+            'Handreichung herunterladen (PDF, 1,75',
+            Markdown::toPlainText('Handreichung [herunterladen (PDF, 1,75'),
+        );
+    }
+
+    public function testPlainTextFlattensNestedTables(): void
+    {
+        // Mailings bauen ihr Layout aus Tabellen in Tabellen; der Konverter maskiert die
+        // inneren Trennstriche.
+        $markdown = "| \\| \\| \\| © Shutterstock/atk work \\| \\|--:\\| \\| \\|:-:\\| \\| \\|:--\\| |\n|:-:|";
+
+        self::assertSame('© Shutterstock/atk work', Markdown::toPlainText($markdown));
+    }
+
     public function testEmptyInputStaysEmpty(): void
     {
         self::assertSame('', Markdown::fromHtml(null));
