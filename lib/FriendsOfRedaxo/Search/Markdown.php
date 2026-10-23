@@ -132,7 +132,7 @@ final class Markdown
         $trimmed = (string) preg_replace('/(?<!\\\\)\]\([^)\s]*(?:\s+"[^"]*")?\)/', '', $trimmed);
         $trimmed = (string) preg_replace('/(?<!\\\\)!?\[(?=[^\]]*$)/', '', $trimmed);
         // Autolinks: <mail@example.org>, <https://example.org/>. Mit Leerzeichen davor,
-        // weil der Konverter sie an das Vorige haengt ("+49 611 95017 8649<mail@...>").
+        // weil der Konverter sie an das Vorige haengt ("+49 30 1234567<mail@...>").
         $trimmed = (string) preg_replace('/<((?:[a-z][a-z0-9+.-]*:|[^\s<>@]+@)[^\s<>]*)>/i', ' $1', $trimmed);
         // Eine Ueberschrift hinter einem Bild in derselben Zeile: "- ![](bild.png) ## Titel"
         $trimmed = (string) preg_replace('/(?<!\S)#{1,6}\s+/', '', $trimmed);

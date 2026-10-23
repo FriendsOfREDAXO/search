@@ -95,15 +95,15 @@ final class rex_search_markdown_test extends TestCase
         // Eine Kachelliste: jeder Punkt eine verlinkte Ueberschrift.
         self::assertSame(
             'Heizkosten senken',
-            Markdown::toPlainText('- ### [Heizkosten senken](/buergerinnen-und-buerger/heizkosten-senken/)'),
+            Markdown::toPlainText('- ### [Heizkosten senken](/ratgeber/heizkosten-senken/)'),
         );
     }
 
     public function testPlainTextUnwrapsAutolinks(): void
     {
         self::assertSame(
-            'Fragen gerne unter solar@lea-hessen.de.',
-            Markdown::toPlainText('Fragen gerne unter <solar@lea-hessen.de>.'),
+            'Fragen gerne unter info@example.org.',
+            Markdown::toPlainText('Fragen gerne unter <info@example.org>.'),
         );
         self::assertSame('Siehe https://example.org/', Markdown::toPlainText('Siehe <https://example.org/>'));
     }
@@ -111,24 +111,24 @@ final class rex_search_markdown_test extends TestCase
     public function testPlainTextSeparatesAnAutolinkFromTheTextBefore(): void
     {
         self::assertSame(
-            '+49 611 95017 8649 evelyn.kierek@lea-hessen.de',
-            Markdown::toPlainText('+49 611 95017 8649<evelyn.kierek@lea-hessen.de>'),
+            '+49 30 1234567 team@example.org',
+            Markdown::toPlainText('+49 30 1234567<team@example.org>'),
         );
     }
 
     public function testPlainTextDropsAHeadingBehindAnImage(): void
     {
         self::assertSame(
-            'Passivhaus im Bestand Kostenplan',
-            Markdown::toPlainText('- ![](/media/publikationen-nopic-small.png) ## Passivhaus im Bestand Kostenplan'),
+            'Altbau sanieren Kostenplan',
+            Markdown::toPlainText('- ![](/media/vorschau.png) ## Altbau sanieren Kostenplan'),
         );
     }
 
     public function testPlainTextKeepsEscapedBracketsInsideALink(): void
     {
         self::assertSame(
-            'Merkblatt zur Digitalisierung [PDF]',
-            Markdown::toPlainText('[**Merkblatt zur Digitalisierung \\[PDF\\]**](https://www.wibank.de/merkblatt.pdf)'),
+            'Merkblatt zur Förderung [PDF]',
+            Markdown::toPlainText('[**Merkblatt zur Förderung \\[PDF\\]**](https://example.org/merkblatt.pdf)'),
         );
     }
 
@@ -145,16 +145,16 @@ final class rex_search_markdown_test extends TestCase
     {
         // Ein zu langer Abschnitt wird nach Zeichen geteilt, auch mitten in einem Link.
         self::assertSame(
-            'Sprechstunde Online Mittwoch',
-            Markdown::toPlainText('Sprechstunde Online](/termine/sprechstunde-2026) Mittwoch'),
+            'Beratung am Telefon Mittwoch',
+            Markdown::toPlainText('Beratung am Telefon](/termine/beratung) Mittwoch'),
         );
         self::assertSame(
-            'Solarenergie Fördervereins e.V. Erleichterungen',
-            Markdown::toPlainText('Solarenergie Fördervereins e.V.](https://www.sfv.de/solarbrief "Externer Link") Erleichterungen'),
+            'des Gartenvereins e.V. Neuigkeiten',
+            Markdown::toPlainText('des Gartenvereins e.V.](https://example.org/rundbrief "Externer Link") Neuigkeiten'),
         );
         self::assertSame(
-            'Handreichung herunterladen (PDF, 1,75',
-            Markdown::toPlainText('Handreichung [herunterladen (PDF, 1,75'),
+            'Leitfaden herunterladen (PDF, 2,4',
+            Markdown::toPlainText('Leitfaden [herunterladen (PDF, 2,4'),
         );
     }
 
@@ -162,9 +162,9 @@ final class rex_search_markdown_test extends TestCase
     {
         // Mailings bauen ihr Layout aus Tabellen in Tabellen; der Konverter maskiert die
         // inneren Trennstriche.
-        $markdown = "| \\| \\| \\| © Shutterstock/atk work \\| \\|--:\\| \\| \\|:-:\\| \\| \\|:--\\| |\n|:-:|";
+        $markdown = "| \\| \\| \\| © Erika Mustermann \\| \\|--:\\| \\| \\|:-:\\| \\| \\|:--\\| |\n|:-:|";
 
-        self::assertSame('© Shutterstock/atk work', Markdown::toPlainText($markdown));
+        self::assertSame('© Erika Mustermann', Markdown::toPlainText($markdown));
     }
 
     public function testEmptyInputStaysEmpty(): void
