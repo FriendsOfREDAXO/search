@@ -106,25 +106,46 @@ final class Markdown
             return null;
         }
 
-        // Tabellenzeile: Zellen durch Leerzeichen trennen
+        // Tabellenzeile: Zellen durch Leerzeichen trennen. Maskierte Striche zaehlen mit,
+        // sie trennen die Zellen verschachtelter Tabellen, aus denen Mailings ihr Layout
+        // bauen; uebrig blieben sonst Reihen aus "\ \ :-:\ \".
         if (str_starts_with($trimmed, '|')) {
-            $cells = array_map('trim', explode('|', trim($trimmed, '|')));
-            $trimmed = implode(' ', array_filter($cells, static fn (string $c): bool => '' !== $c));
+            $cells = array_map('trim', preg_split('/\\\\?\|/', trim($trimmed, '|')) ?: []);
+            $trimmed = implode(' ', array_filter($cells, static fn (string $c): bool => '' !== $c && !preg_match('/^:?-+:?$/', $c)));
         }
 
-        $trimmed = (string) preg_replace('/^#{1,6}\s+/', '', $trimmed);
-        $trimmed = (string) preg_replace('/^>\s?/', '', $trimmed);
-        $trimmed = (string) preg_replace('/^(?:[-*+]|\d+\.)\s+/', '', $trimmed);
+        // Wiederholt, weil die Zeichen sich stapeln: eine Kachelliste setzt jede
+        // verlinkte Ueberschrift als "- ### [Titel](/ziel/)".
+        do {
+            $before = $trimmed;
+            $trimmed = (string) preg_replace('/^#{1,6}\s+/', '', $trimmed);
+            $trimmed = (string) preg_replace('/^>\s?/', '', $trimmed);
+            $trimmed = (string) preg_replace('/^(?:[-*+]|\d+\.)\s+/', '', $trimmed);
+        } while ($before !== $trimmed);
 
-        // Bild vor Link ersetzen, sonst bleibt das Ausrufezeichen stehen.
-        $trimmed = (string) preg_replace('/!\[([^\]]*)\]\([^)]*\)/', '$1', $trimmed);
-        $trimmed = (string) preg_replace('/\[([^\]]*)\]\([^)]*\)/', '$1', $trimmed);
+        // Bild vor Link ersetzen, sonst bleibt das Ausrufezeichen stehen. Die Beschriftung
+        // darf maskierte Klammern enthalten, etwa "\[PDF\]".
+        $trimmed = (string) preg_replace('/!\[((?:\\\\.|[^\]\\\\])*)\]\([^)]*\)/', '$1', $trimmed);
+        $trimmed = (string) preg_replace('/\[((?:\\\\.|[^\]\\\\])*)\]\([^)]*\)/', '$1', $trimmed);
+        // Reste eines Links, den das Teilen eines langen Abschnitts durchschnitten hat:
+        // das Ende ohne Anfang und der Anfang ohne Ende.
+        $trimmed = (string) preg_replace('/(?<!\\\\)\]\([^)\s]*(?:\s+"[^"]*")?\)/', '', $trimmed);
+        $trimmed = (string) preg_replace('/(?<!\\\\)!?\[(?=[^\]]*$)/', '', $trimmed);
+        // Autolinks: <mail@example.org>, <https://example.org/>. Mit Leerzeichen davor,
+        // weil der Konverter sie an das Vorige haengt ("+49 30 1234567<mail@...>").
+        $trimmed = (string) preg_replace('/<((?:[a-z][a-z0-9+.-]*:|[^\s<>@]+@)[^\s<>]*)>/i', ' $1', $trimmed);
+        // Eine Ueberschrift hinter einem Bild in derselben Zeile: "- ![](bild.png) ## Titel"
+        $trimmed = (string) preg_replace('/(?<!\S)#{1,6}\s+/', '', $trimmed);
 
         $trimmed = (string) preg_replace('/(\*\*|__)(.+?)\1/u', '$2', $trimmed);
+        // Was danach noch an Sternpaaren steht, hat keinen Partner mehr: verschachteltes
+        // Fett ("**a **b****") oder ein abgeschnittener Abschnitt.
+        $trimmed = (string) preg_replace('/\*{2,}/', '', $trimmed);
         $trimmed = (string) preg_replace('/(?<![\w*])\*([^*\n]+)\*(?![\w*])/u', '$1', $trimmed);
         $trimmed = (string) preg_replace('/(?<![\w_])_([^_\n]+)_(?![\w_])/u', '$1', $trimmed);
         $trimmed = (string) preg_replace('/`([^`\n]+)`/', '$1', $trimmed);
         $trimmed = (string) preg_replace('/\\\\([\\\\`*_{}\[\]()#+\-.!|])/', '$1', $trimmed);
+        $trimmed = (string) preg_replace('/[ \t\x{00A0}]{2,}/u', ' ', $trimmed);
 
         return trim($trimmed);
     }

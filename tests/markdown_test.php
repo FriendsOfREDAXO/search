@@ -90,6 +90,83 @@ final class rex_search_markdown_test extends TestCase
         );
     }
 
+    public function testPlainTextDropsAHeadingInsideAListItem(): void
+    {
+        // Eine Kachelliste: jeder Punkt eine verlinkte Ueberschrift.
+        self::assertSame(
+            'Heizkosten senken',
+            Markdown::toPlainText('- ### [Heizkosten senken](/ratgeber/heizkosten-senken/)'),
+        );
+    }
+
+    public function testPlainTextUnwrapsAutolinks(): void
+    {
+        self::assertSame(
+            'Fragen gerne unter info@example.org.',
+            Markdown::toPlainText('Fragen gerne unter <info@example.org>.'),
+        );
+        self::assertSame('Siehe https://example.org/', Markdown::toPlainText('Siehe <https://example.org/>'));
+    }
+
+    public function testPlainTextSeparatesAnAutolinkFromTheTextBefore(): void
+    {
+        self::assertSame(
+            '+49 30 1234567 team@example.org',
+            Markdown::toPlainText('+49 30 1234567<team@example.org>'),
+        );
+    }
+
+    public function testPlainTextDropsAHeadingBehindAnImage(): void
+    {
+        self::assertSame(
+            'Altbau sanieren Kostenplan',
+            Markdown::toPlainText('- ![](/media/vorschau.png) ## Altbau sanieren Kostenplan'),
+        );
+    }
+
+    public function testPlainTextKeepsEscapedBracketsInsideALink(): void
+    {
+        self::assertSame(
+            'Merkblatt zur Förderung [PDF]',
+            Markdown::toPlainText('[**Merkblatt zur Förderung \\[PDF\\]**](https://example.org/merkblatt.pdf)'),
+        );
+    }
+
+    public function testPlainTextDropsNestedBold(): void
+    {
+        // So setzt der Konverter ein <strong> in einem <strong> um.
+        self::assertSame(
+            'Energie sparen und Klimaschutz fördern',
+            Markdown::toPlainText('**Energie sparen **und Klimaschutz fördern****'),
+        );
+    }
+
+    public function testPlainTextCleansAPieceCutOutOfALink(): void
+    {
+        // Ein zu langer Abschnitt wird nach Zeichen geteilt, auch mitten in einem Link.
+        self::assertSame(
+            'Beratung am Telefon Mittwoch',
+            Markdown::toPlainText('Beratung am Telefon](/termine/beratung) Mittwoch'),
+        );
+        self::assertSame(
+            'des Gartenvereins e.V. Neuigkeiten',
+            Markdown::toPlainText('des Gartenvereins e.V.](https://example.org/rundbrief "Externer Link") Neuigkeiten'),
+        );
+        self::assertSame(
+            'Leitfaden herunterladen (PDF, 2,4',
+            Markdown::toPlainText('Leitfaden [herunterladen (PDF, 2,4'),
+        );
+    }
+
+    public function testPlainTextFlattensNestedTables(): void
+    {
+        // Mailings bauen ihr Layout aus Tabellen in Tabellen; der Konverter maskiert die
+        // inneren Trennstriche.
+        $markdown = "| \\| \\| \\| © Erika Mustermann \\| \\|--:\\| \\| \\|:-:\\| \\| \\|:--\\| |\n|:-:|";
+
+        self::assertSame('© Erika Mustermann', Markdown::toPlainText($markdown));
+    }
+
     public function testEmptyInputStaysEmpty(): void
     {
         self::assertSame('', Markdown::fromHtml(null));
