@@ -429,6 +429,60 @@ rex_extension::register('SEARCH_QUERY_TERMS', function (rex_extension_point $ep)
 Hier hängen Synonyme und eigene Umschreibungen ein; Stammformen und Wortzerlegung bringt
 das AddOn selbst mit, siehe unten.
 
+#### Beispiel: Abkürzungen über ihre Langform suchen
+
+Wörter unterhalb von `innodb_ft_min_token_size` – bei InnoDB in der Regel drei Zeichen – stehen
+gar nicht im Index. „KI" oder „EU" findet die Volltextsuche deshalb nie, auch wenn sie im Text
+stehen. Sie landen in `$terms->ignored` mit dem Grund `SearchTerms::REASON_TOO_SHORT`, und genau
+dort setzt eine Umschreibung an: statt der Abkürzung wird ihre Langform gesucht. „ki
+werkzeuge" sucht dann nach „werkzeuge", „Künstliche" und „Intelligenz".
+
+```php
+use FriendsOfRedaxo\Search\Query\SearchTerms;
+use FriendsOfRedaxo\Search\Query\TermParser;
+
+rex_extension::register('SEARCH_QUERY_TERMS', static function (rex_extension_point $ep): SearchTerms {
+    /** @var SearchTerms $terms */
+    $terms = $ep->getSubject();
+
+    // Kleingeschrieben, damit die Eingabe nicht auf die Schreibweise achten muss
+    $abbreviations = [
+        'ki' => 'Künstliche Intelligenz',
+        'eu' => 'Europäische Union',
+    ];
+
+    $words = $terms->words;
+    $ignored = $terms->ignored;
+    foreach ($terms->ignored as $word => $reason) {
+        $long = $abbreviations[mb_strtolower((string) $word)] ?? null;
+        if (SearchTerms::REASON_TOO_SHORT !== $reason || null === $long) {
+            continue;
+        }
+        unset($ignored[$word]);
+        foreach (preg_split('/[^\pL\pN]+/u', $long, -1, PREG_SPLIT_NO_EMPTY) ?: [] as $part) {
+            // Auch die Langform darf keine zu kurzen Wörter enthalten
+            if (mb_strlen($part) >= TermParser::getMinTokenSize() && !in_array($part, $words, true)) {
+                $words[] = $part;
+            }
+        }
+    }
+
+    return $ignored === $terms->ignored ? $terms : new SearchTerms($words, $ignored, $terms->expansions);
+});
+```
+
+Ein paar Hinweise dazu:
+
+- **Nur zu kurze Wörter umschreiben.** Eine Abkürzung, die lang genug für den Index ist, findet
+  die Suche selbst; ihre Langform zusätzlich zu suchen, gehört dann als Erweiterung in
+  `withExpansions()`, damit die Eingabe nicht ersetzt wird.
+- **Die Liste muss nicht im Code stehen.** Pflegt eine Website ihre Abkürzungen ohnehin, etwa
+  für die `<abbr>`-Auszeichnung im Frontend, lässt sie sich von dort lesen. Dann bleibt sie an
+  einer Stelle, und die Redaktion erweitert die Suche mit.
+- **Hervorgehoben wird die Langform.** Was in `$words` steht, markiert auch der Ausschnitt;
+  eine Abkürzung, die im Text steht, bleibt unmarkiert.
+- Die Tippfehlerkorrektur und die Stammformen laufen danach wie gewohnt über die neuen Wörter.
+
 ### Backend
 
 Die Seite *Suche → Suche* nutzt dieselbe API. Sie kennt drei Sucharten – Volltext, Volltext
@@ -656,6 +710,15 @@ beide Wege oben gefunden haben, steht bei 1; eines, das nur ein Weg kennt, höch
 | `withSemantic(true, $schwelle)` | aus, Schwelle `0.40` |
 | `withSemanticWeight()` | `1.0`, also gleichauf mit dem Volltext |
 | `withSemanticLimit()` | `50` Dokumente aus der Bedeutung |
+
+Die Schwelle lässt sich je Abfrage setzen, ohne die Voreinstellung zu ändern – etwa wenn ein
+anderes Modell als das gemessene seine Trennung woanders hat:
+
+```php
+SearchQuery::create($frage)->withSemantic(true, 0.45);
+```
+
+Wie man den passenden Wert findet, steht unter *Die Schwelle*.
 
 Die **Frage wird eingebettet**, und das kostet gemessen 172 ms gegenüber 7 ms für die
 Volltextsuche. Deshalb merkt sich `rex_search_query_vector` die Vektoren schon gestellter Fragen
