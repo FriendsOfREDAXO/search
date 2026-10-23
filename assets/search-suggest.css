@@ -1,0 +1,54 @@
+/*
+ * Vorschlaege fuer das Suchfeld (search-suggest.js), eine schlichte Vorlage.
+ *
+ * Die Liste steht im Fluss, nicht darueber: so schneidet kein Behaelter mit overflow: hidden
+ * sie ab. Wer sie ueber den Inhalt legen will, setzt den Anker auf position: relative und die
+ * Liste auf position: absolute.
+ */
+.search-suggest {
+    --search-suggest-background: #fff;
+    --search-suggest-color: inherit;
+    --search-suggest-active-background: #eef2f6;
+    --search-suggest-active-color: inherit;
+    --search-suggest-focus: #1a5fb4;
+
+    margin: .25rem 0 0;
+    padding: .25rem 0;
+    list-style: none;
+    color: var(--search-suggest-color);
+    background: var(--search-suggest-background);
+    border: 1px solid rgba(0, 0, 0, .15);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, .1);
+}
+
+.search-suggest[hidden] {
+    display: none;
+}
+
+.search-suggest-item {
+    padding: .375rem .75rem;
+    cursor: pointer;
+}
+
+.search-suggest-item strong {
+    font-weight: 700;
+}
+
+.search-suggest-item:hover,
+.search-suggest-item.is-active {
+    color: var(--search-suggest-active-color);
+    background: var(--search-suggest-active-background);
+}
+
+/* Nicht nur ueber die Farbe: die Auswahl per Tastatur bekommt einen Rahmen */
+.search-suggest-item.is-active {
+    outline: 2px solid var(--search-suggest-focus);
+    outline-offset: -2px;
+}
+
+@media (forced-colors: active) {
+    .search-suggest-item.is-active {
+        outline-color: Highlight;
+    }
+}
