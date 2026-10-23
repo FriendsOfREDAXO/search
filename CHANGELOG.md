@@ -1,5 +1,9 @@
 # Changelog
 
+## Unveröffentlicht
+
+- README: Beispiel, wie `SEARCH_QUERY_TERMS` zu kurze Abkürzungen wie „KI" über ihre Langform sucht, und wie sich die Schwelle der Bedeutungssuche je Abfrage setzen lässt.
+
 ## 0.2.1 – 2026-10-18
 
 Behebt die Installation über Composer auf PHP 8.1 und 8.2.
