@@ -429,6 +429,102 @@ rex_extension::register('SEARCH_QUERY_TERMS', function (rex_extension_point $ep)
 Hier hängen Synonyme und eigene Umschreibungen ein; Stammformen und Wortzerlegung bringt
 das AddOn selbst mit, siehe unten.
 
+### Vorschläge beim Tippen
+
+Das AddOn bringt einen Endpunkt für Suchvorschläge mit und ein Skript, das ihn an ein
+Suchfeld hängt. Vorgeschlagen werden Wörter aus der Wortliste, die das zuletzt getippte Wort
+ergänzen: aus „Förderung wärmep" wird „Förderung Wärmepumpe". Jeder Vorschlag wird vorher
+als Suche geprüft, er kommt nur in die Liste, wenn er auch Treffer hat.
+
+**Ohne Rahmen antwortet der Endpunkt nicht.** Ein Vorschlag verrät, dass ein Wort im Index
+steht – und eine Quelle mit internen Datensätzen gehört nicht ins Suchfeld. Welche Quellen
+ein Besucher durchsuchen darf, weiß nur die Website, sie legt den Rahmen deshalb selbst
+fest, etwa in der `boot.php` ihres Projekt-AddOns:
+
+```php
+if (rex::isFrontend()) {
+    rex_api_search_suggest::setScope(static fn (): ?SearchQuery => SearchQuery::create('')
+        ->withSourceIds(1, 2)
+        ->withClangIds(rex_clang::getCurrentId()));
+}
+```
+
+Die Funktion läuft erst beim Aufruf, die Sprache steht dann fest. Gibt sie `null` zurück,
+gibt es für diesen Aufruf keine Vorschläge.
+
+Ins Formular kommt nur ein Attribut am Eingabefeld, dazu Skript und Stil:
+
+```php
+<form action="<?= rex_getUrl($sucheId) ?>" role="search">
+    <label for="q">Suchbegriff</label>
+    <input type="search" name="q" id="q"
+           data-search-suggest="<?= rex_escape(rex_api_search_suggest::getUrl($sucheId)) ?>">
+    <button type="submit">Suchen</button>
+</form>
+
+<link rel="stylesheet" href="<?= rex_url::addonAssets('search', 'search-suggest.css') ?>">
+<script src="<?= rex_url::addonAssets('search', 'search-suggest.js') ?>" defer></script>
+```
+
+`getUrl()` am besten mit dem Suchartikel aufrufen: dann stimmt die Sprache, und die Anfrage
+läuft über dieselbe Domain wie die Suche.
+
+Das Skript baut eine Combobox nach dem WAI-ARIA-Muster *List autocomplete with manual
+selection*. Der Fokus bleibt im Feld, die Pfeiltasten wählen einen Vorschlag, Enter sucht
+danach, Escape schließt die Liste. Wie viele Vorschläge es gibt, liest ein Screenreader aus
+einer Statuszeile vor. Die Texte richten sich nach dem nächsten `lang`-Attribut (deutsch oder
+englisch) und lassen sich je Feld ersetzen:
+
+```html
+<input … data-search-suggest-label="Vorschläge"
+         data-search-suggest-one="Ein Vorschlag."
+         data-search-suggest-many="{count} Vorschläge.">
+```
+
+Die Liste steht hinter dem Feld, oder hinter dem nächsten umgebenden Element mit
+`data-search-suggest-anchor` (bzw. `.input-group`). Gestaltet wird sie über die Klassen
+`.search-suggest`, `.search-suggest-item` und `.is-active`; `search-suggest.css` ist eine
+schlichte Vorlage mit CSS-Variablen (`--search-suggest-background` usw.). Wer seine Skripte
+bündelt, kann `assets/search-suggest.js` auch direkt importieren.
+
+Was gefunden wird, in dieser Reihenfolge:
+
+- Wörter, die mit dem Getippten **beginnen** (ab zwei Buchstaben),
+- Wörter, die es **enthalten** (ab vier) – „pumpe" schlägt „Luftwärmepumpe" vor,
+- und erst wenn das nichts ergibt, Wörter mit einem **Tippfehler** (ab fünf) – „Energiber"
+  schlägt „Energieberatung" vor.
+
+Nicht vorgeschlagen werden Funktionswörter der Sprache („dass", „damit"), Zahlen,
+zusammengeschriebene Wörter wie „PumpeFinden" und mehrere Beugungsformen desselben Worts.
+Großgeschriebene Wörter kommen zuerst, ein getippter Umlaut gilt als gemeint: „wä" schlägt
+„Wärme" vor, aber nicht „Wasser".
+
+Die Antwort ist JSON, mit den Teilen, die schon im Feld stehen (`typed`):
+
+```json
+{"suggestions": [
+    {"value": "Wärmepumpe", "parts": [{"text": "Wärmep", "typed": true}, {"text": "umpe", "typed": false}]}
+]}
+```
+
+Eigene Wörter, die vor denen aus der Wortliste geprüft werden – etwa Langformen von
+Abkürzungen –, kommen über `SEARCH_SUGGEST_WORDS`:
+
+```php
+rex_extension::register('SEARCH_SUGGEST_WORDS', static function (rex_extension_point $ep) {
+    // Parameter: typed (das letzte Wort), input (das ganze Feld), scope (SearchQuery)
+    return 'geg' === mb_strtolower($ep->getParam('typed'))
+        ? ['Gebäudeenergiegesetz', ...$ep->getSubject()]
+        : $ep->getSubject();
+});
+```
+
+Ohne Endpunkt lässt sich dasselbe in PHP abfragen:
+
+```php
+$suggestions = (new FriendsOfRedaxo\Search\Suggest\Suggester())->suggest('Wärmep', $scope);
+```
+
 ### Backend
 
 Die Seite *Suche → Suche* nutzt dieselbe API. Sie kennt drei Sucharten – Volltext, Volltext

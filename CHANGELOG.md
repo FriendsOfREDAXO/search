@@ -1,5 +1,14 @@
 # Changelog
 
+## Unveröffentlicht
+
+### Vorschläge beim Tippen
+
+- Neuer Endpunkt `rex_api_search_suggest` (`?rex-api-call=search_suggest&q=…`): ergänzt das zuletzt getippte Wort aus der Wortliste, erst über den Anfang, dann über einen Teil des Worts, zuletzt mit einem Tippfehler. Jeder Vorschlag wird als Suche geprüft und nur angeboten, wenn er Treffer hat. Funktionswörter, Zahlen und Beugungsformen desselben Worts fallen heraus.
+- Der Endpunkt antwortet erst, wenn die Website mit `rex_api_search_suggest::setScope()` festlegt, welche Quellen vorgeschlagen werden dürfen – ein Vorschlag verrät, dass ein Wort im Index steht.
+- `assets/search-suggest.js` hängt die Vorschläge über `data-search-suggest` an ein Suchfeld, als zugängliche Combobox nach WAI-ARIA; `assets/search-suggest.css` ist eine Vorlage für die Gestaltung.
+- Neuer Extension Point `SEARCH_SUGGEST_WORDS` für eigene Vorschläge, etwa Langformen von Abkürzungen.
+
 ## 0.2.1 – 2026-10-18
 
 Behebt die Installation über Composer auf PHP 8.1 und 8.2.
