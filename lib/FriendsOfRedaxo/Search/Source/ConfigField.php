@@ -18,6 +18,8 @@ final class ConfigField
     public const SELECT = 'select';
     public const MULTISELECT = 'multiselect';
     public const CHECKBOX = 'checkbox';
+    /** Wie TEXT, aber verdeckt angezeigt und ohne Leerraum zu entfernen. */
+    public const PASSWORD = 'password';
 
     /**
      * @param array<string|int, string> $options Wert => Beschriftung, nur fuer SELECT und MULTISELECT
@@ -51,6 +53,8 @@ final class ConfigField
                     $values[] = (string) $value;
                 }
                 return array_values(array_unique($values));
+            case self::PASSWORD:
+                return is_array($raw) || null === $raw ? '' : (string) $raw;
             default:
                 if (is_array($raw) || null === $raw) {
                     return '';

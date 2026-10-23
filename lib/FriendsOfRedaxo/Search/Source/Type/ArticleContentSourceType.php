@@ -10,6 +10,7 @@ use FriendsOfRedaxo\Search\Source\ConfigField;
 use FriendsOfRedaxo\Search\Source\Source;
 use FriendsOfRedaxo\Search\Text;
 use rex;
+use rex_article;
 use rex_article_content;
 use rex_i18n;
 use rex_sql;
@@ -19,12 +20,13 @@ use function is_string;
 
 /**
  * Artikel-Inhalt: ein Dokument "{article_id}-{clang_id}-fullcontent" je Artikel und Sprache,
- * Inhalt aus den Slice-Werten oder dem gerenderten Artikel.
+ * Inhalt aus den Slice-Werten, dem gerenderten Artikel oder per HTTP aus dem Frontend.
  */
 final class ArticleContentSourceType extends AbstractArticleSourceType
 {
     public const MODE_SLICES = 'slices';
     public const MODE_RENDERED = 'rendered';
+    public const MODE_FRONTEND = 'frontend';
 
     public function getKey(): string
     {
@@ -52,14 +54,23 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
         $fields[] = new ConfigField('mode', rex_i18n::msg('search_article_mode'), ConfigField::SELECT, [
             self::MODE_SLICES => rex_i18n::msg('search_article_mode_slices'),
             self::MODE_RENDERED => rex_i18n::msg('search_article_mode_rendered'),
-        ], required: true, default: self::MODE_SLICES);
+            self::MODE_FRONTEND => rex_i18n::msg('search_article_mode_frontend'),
+        ], required: true, reloadOnChange: true, default: self::MODE_SLICES);
+
+        if (self::MODE_FRONTEND === ($config['mode'] ?? null)) {
+            $fields[] = new ConfigField('frontend_verify_ssl', rex_i18n::msg('search_article_frontend_verify_ssl'), ConfigField::CHECKBOX, notice: rex_i18n::msg('search_article_frontend_verify_ssl_notice'), default: true);
+            $fields[] = new ConfigField('frontend_auth_user', rex_i18n::msg('search_article_frontend_auth_user'), notice: rex_i18n::msg('search_article_frontend_auth_notice'));
+            $fields[] = new ConfigField('frontend_auth_password', rex_i18n::msg('search_article_frontend_auth_password'), ConfigField::PASSWORD);
+        }
 
         return $fields;
     }
 
     public function describe(Source $source): string
     {
-        return parent::describe($source) . ', ' . (self::MODE_RENDERED === $source->getConfig('mode') ? 'rendered' : 'slices');
+        $mode = $source->getConfig('mode');
+
+        return parent::describe($source) . ', ' . (self::MODE_RENDERED === $mode || self::MODE_FRONTEND === $mode ? $mode : self::MODE_SLICES);
     }
 
     public function createDocuments(Source $source, string $itemId): iterable
@@ -69,7 +80,7 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
             return [];
         }
 
-        $html = $this->readHtml($source, $article->getId(), $article->getClangId());
+        $html = $this->readHtml($source, $article);
         [$raw, $format, $content] = $this->convert($html);
 
         return [
@@ -115,8 +126,20 @@ final class ArticleContentSourceType extends AbstractArticleSourceType
      * Bewusst wird hier nur einmal gerendert: alles Weitere wird aus demselben Ergebnis
      * abgeleitet, ein zweiter Rendervorgang waere der teuerste Teil des Aufbaus.
      */
-    private function readHtml(Source $source, int $articleId, int $clangId): string
+    private function readHtml(Source $source, rex_article $article): string
     {
+        $articleId = $article->getId();
+        $clangId = $article->getClangId();
+
+        // Ein Artikel, den das Frontend so nicht liefert -- offline, Weiterleitung, Fehler --,
+        // faellt wie beim Rendern auf die Slice-Werte zurueck.
+        if (self::MODE_FRONTEND === $source->getConfig('mode')) {
+            $html = ArticleFrontend::fetch($source, $article);
+            if (null !== $html && '' !== trim($html)) {
+                return $html;
+            }
+        }
+
         if (self::MODE_RENDERED === $source->getConfig('mode') && class_exists(rex_article_content::class)) {
             try {
                 $content = new rex_article_content($articleId, $clangId);

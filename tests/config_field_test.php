@@ -31,6 +31,15 @@ final class rex_search_config_field_test extends TestCase
         self::assertFalse($field->normalize(null));
     }
 
+    public function testNormalizePasswordKeepsWhitespace(): void
+    {
+        $field = new ConfigField('password', 'Passwort', ConfigField::PASSWORD);
+
+        self::assertSame(' geheim ', $field->normalize(' geheim '));
+        self::assertSame('', $field->normalize(null));
+        self::assertSame('', $field->normalize(['unexpected']));
+    }
+
     public function testIsEmpty(): void
     {
         $field = new ConfigField('x', 'x');

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unveröffentlicht
+
+- Der Artikel-Inhalt lässt sich als dritte Inhaltsquelle aus dem Frontend holen: per HTTP, so wie ein Besucher die Seite bekommt. Damit kommen auch Module in den Index, die nur im Frontend funktionieren. Indiziert wird nur, was das Frontend für den abgerufenen Artikel als Inhalt markiert, Navigation und Fuß bleiben draußen. Optional mit Basic Auth und abschaltbarer Zertifikatsprüfung für Testserver.
+- Neuer Feldtyp `ConfigField::PASSWORD` für Quellentypen: verdeckte Eingabe, der Wert wird nicht getrimmt.
+
 ## 0.2.1 – 2026-10-18
 
 Behebt die Installation über Composer auf PHP 8.1 und 8.2.
