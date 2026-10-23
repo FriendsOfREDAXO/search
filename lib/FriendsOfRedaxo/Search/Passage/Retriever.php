@@ -68,7 +68,7 @@ final class Retriever
         }
 
         try {
-            $vector = $this->client->embed([$query->getQuestion()])[0] ?? [];
+            $vector = $this->client->embed([EmbeddingClient::queryText($query->getQuestion())])[0] ?? [];
         } catch (EmbeddingException) {
             // Der Dienst antwortet nicht. Keine Passagen ist hier die richtige Antwort:
             // ein Aufrufer, der daraufhin ohne Kontext antwortet, ist besser dran als
