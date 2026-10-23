@@ -127,20 +127,26 @@ final class Indexer
     }
 
     /**
-     * Aktualisiert einen einzelnen Datensatz. Wird vom AddOn selbst nicht aufgerufen, der
-     * Index wird immer vollstaendig neu aufgebaut; gedacht fuer fremden Code, der eine
-     * gezielte Aktualisierung braucht. Liefert der Typ keine Dokumente mehr, werden die
-     * alten entfernt.
+     * Aktualisiert einen einzelnen Datensatz samt seinen Abschnitten. Das AddOn ruft das bei
+     * Artikelquellen mit "Bei Aenderungen sofort aktualisieren" auf (ArticleReindexer);
+     * fremder Code kann es fuer eigene Quellen genauso nutzen. Liefert der Typ keine
+     * Dokumente mehr, werden die alten entfernt.
+     *
+     * Die Wortliste bleibt, wie sie ist: ein einzelner Datensatz verraet nicht, ob ein Wort
+     * aus der ganzen Quelle verschwunden ist. Das erledigt der naechste vollstaendige Lauf.
      */
     public function reindexItem(Source $source, string $itemId): int
     {
-        if (!$this->accepted($source, $itemId, IndexFilterRegistry::forSource($source))) {
+        if ($this->accepted($source, $itemId, IndexFilterRegistry::forSource($source))) {
+            $written = $this->indexItem($source, $source->requireType(), $itemId, new DateTimeImmutable(), true);
+        } else {
             $this->index->deleteByItem($source->requireId(), $itemId);
-
-            return 0;
+            $written = 0;
         }
 
-        return $this->indexItem($source, $source->requireType(), $itemId, new DateTimeImmutable(), true);
+        $this->chunks->rebuildItem($source, $itemId);
+
+        return $written;
     }
 
     private function indexItem(Source $source, SourceType $type, string $itemId, DateTimeImmutable $at, bool $cleanup): int

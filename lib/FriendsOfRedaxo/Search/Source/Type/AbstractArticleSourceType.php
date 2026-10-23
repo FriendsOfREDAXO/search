@@ -24,9 +24,9 @@ use function is_array;
 
 /**
  * Gemeinsame Basis der Artikel-Quellentypen: Auswahl der Artikel ueber Sprachen, Kategorien
- * und Online-Status, Datensatz-ID "{article_id}-{clang_id}", Einzelaktualisierung ueber die
- * ART_*- und SLICE_*-Extension-Points. Was aus einem Artikel indiziert wird, bestimmt die
- * konkrete Unterklasse.
+ * und Online-Status, Datensatz-ID "{article_id}-{clang_id}", auf Wunsch Einzelaktualisierung
+ * ueber die Extension Points der Struktur (siehe ArticleReindexer). Was aus einem Artikel
+ * indiziert wird, bestimmt die konkrete Unterklasse.
  */
 abstract class AbstractArticleSourceType extends SourceType
 {
@@ -64,6 +64,10 @@ abstract class AbstractArticleSourceType extends SourceType
         }
 
         $fields[] = new ConfigField('include_offline', rex_i18n::msg('search_article_include_offline'), ConfigField::CHECKBOX);
+        // Aus als Vorgabe: bei Quellen, die gerendert indizieren, rendert jedes Speichern im
+        // Backend den Artikel einmal mehr, und bestehende Quellen sollen sich durch ein Update
+        // nicht anders verhalten.
+        $fields[] = new ConfigField('reindex_on_change', rex_i18n::msg('search_article_reindex_on_change'), ConfigField::CHECKBOX, notice: rex_i18n::msg('search_article_reindex_on_change_notice'));
 
         return $fields;
     }

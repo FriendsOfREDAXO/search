@@ -18,6 +18,8 @@ final class rex_search_chunk_repository_spy extends ChunkRepository
 
     public array $deletedSources = [];
 
+    public int $orphanRuns = 0;
+
     public function syncDocument(int $sourceId, int $documentId, array $chunks): array
     {
         $this->synced[$documentId] = $chunks;
@@ -32,6 +34,8 @@ final class rex_search_chunk_repository_spy extends ChunkRepository
 
     public function deleteOrphans(string $indexTable): int
     {
+        ++$this->orphanRuns;
+
         return 0;
     }
 }
@@ -78,6 +82,11 @@ final class rex_search_chunk_builder_test extends TestCase
             protected function readDocuments(int $sourceId, int $offset, int $limit): array
             {
                 return array_slice($this->documents, $offset, $limit);
+            }
+
+            protected function readItemDocuments(int $sourceId, string $itemId): array
+            {
+                return array_values(array_filter($this->documents, static fn (array $row): bool => $itemId === ($row['item_id'] ?? null)));
             }
         };
     }
@@ -151,6 +160,50 @@ final class rex_search_chunk_builder_test extends TestCase
 
         self::assertSame([7], $chunks->deletedSources);
         self::assertSame([7], $vectors->deletedSources);
+        self::assertSame(0, $result['chunks']);
+    }
+
+    /**
+     * Nach einer Einzelaktualisierung werden nur die Dokumente dieses Datensatzes neu
+     * zerlegt; was der Datensatz nicht mehr liefert, raeumt derselbe Weg auf wie beim
+     * vollstaendigen Lauf.
+     */
+    public function testRebuildItemOnlyTouchesTheDocumentsOfThatItem(): void
+    {
+        if (!VectorSupport::isAvailable()) {
+            self::markTestSkipped('Ohne Vektoren legt die Quelle keine Abschnitte an.');
+        }
+
+        $chunks = new rex_search_chunk_repository_spy();
+        $builder = $this->builder(
+            [
+                ['id' => 11, 'item_id' => '5-1', 'title' => 'Eins', 'content' => 'Erster Text.', 'content_raw' => null, 'content_raw_format' => null],
+                ['id' => 12, 'item_id' => '6-1', 'title' => 'Zwei', 'content' => 'Zweiter Text.', 'content_raw' => null, 'content_raw_format' => null],
+            ],
+            $chunks,
+            new rex_search_vector_store_spy(),
+        );
+
+        $result = $builder->rebuildItem($this->source(true, 'whole'), '5-1');
+
+        self::assertSame([11], array_keys($chunks->synced));
+        self::assertSame(1, $result['chunks']);
+        self::assertSame(1, $chunks->orphanRuns);
+    }
+
+    /**
+     * Anders als rebuildSource() raeumt die Einzelaktualisierung bei abgeschalteter
+     * Zerlegung nicht die ganze Quelle ab -- das gehoert zum vollstaendigen Lauf.
+     */
+    public function testRebuildItemWithoutChunkingLeavesTheSourceAlone(): void
+    {
+        $chunks = new rex_search_chunk_repository_spy();
+        $vectors = new rex_search_vector_store_spy();
+
+        $result = $this->builder([], $chunks, $vectors)->rebuildItem($this->source(false), '5-1');
+
+        self::assertSame([], $chunks->deletedSources);
+        self::assertSame([], $vectors->deletedSources);
         self::assertSame(0, $result['chunks']);
     }
 

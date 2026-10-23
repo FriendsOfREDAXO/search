@@ -67,16 +67,9 @@ class ChunkBuilder
             }
 
             foreach ($rows as $row) {
-                $input = new ChunkInput(
-                    (string) $row['title'],
-                    (string) $row['content'],
-                    null === $row['content_raw'] ? null : (string) $row['content_raw'],
-                    null === $row['content_raw_format'] ? null : (string) $row['content_raw_format'],
-                );
-                $chunks = $input->isEmpty() ? [] : self::enforceMaximum($strategy->split($input, $config), $config);
-                $result = $this->chunks->syncDocument($sourceId, (int) $row['id'], $chunks);
+                $result = $this->syncRow($sourceId, $strategy, $config, $row);
 
-                $total += count($chunks);
+                $total += $result['chunks'];
                 $kept += $result['kept'];
                 $written += $result['written'];
                 $deleted += $result['deleted'];
@@ -91,6 +84,83 @@ class ChunkBuilder
         $this->vectors->deleteOrphans();
 
         return ['chunks' => $total, 'kept' => $kept, 'written' => $written, 'deleted' => $deleted];
+    }
+
+    /**
+     * Baut die Abschnitte eines einzelnen Datensatzes neu, nach Indexer::reindexItem().
+     *
+     * Unveraenderte Abschnitte behalten ihre Vektoren, wie beim vollstaendigen Lauf. Neue
+     * bekommen erst mit dem naechsten Lauf des Cronjobs "Vektoren erzeugen" einen; bis
+     * dahin findet die Suche nach Bedeutung sie nicht, der Volltext schon.
+     *
+     * @return array{chunks: int, kept: int, written: int, deleted: int}
+     */
+    public function rebuildItem(Source $source, string $itemId): array
+    {
+        // Ist die Zerlegung aus, gibt es nichts nachzuziehen: beim Abschalten hat der
+        // naechste vollstaendige Lauf die Abschnitte der Quelle entfernt.
+        if (!$source->createsChunks()) {
+            return ['chunks' => 0, 'kept' => 0, 'written' => 0, 'deleted' => 0];
+        }
+
+        $sourceId = $source->requireId();
+        $strategy = $source->getChunkStrategy();
+        $config = $source->config;
+
+        $total = 0;
+        $kept = 0;
+        $written = 0;
+        $deleted = 0;
+        foreach ($this->readItemDocuments($sourceId, $itemId) as $row) {
+            $result = $this->syncRow($sourceId, $strategy, $config, $row);
+
+            $total += $result['chunks'];
+            $kept += $result['kept'];
+            $written += $result['written'];
+            $deleted += $result['deleted'];
+        }
+
+        // Ein Dokument, das der Datensatz nicht mehr liefert, hat reindexItem() schon
+        // entfernt; seine Abschnitte und Vektoren raeumt derselbe Weg auf wie beim
+        // vollstaendigen Lauf.
+        $deleted += $this->chunks->deleteOrphans(IndexRepository::table());
+        $this->vectors->deleteOrphans();
+
+        return ['chunks' => $total, 'kept' => $kept, 'written' => $written, 'deleted' => $deleted];
+    }
+
+    /**
+     * Zerlegt ein Dokument aus dem Index und gleicht seine Abschnitte ab.
+     *
+     * @param array<string, mixed> $config
+     * @param array<string, mixed> $row
+     * @return array{chunks: int, kept: int, written: int, deleted: int}
+     */
+    private function syncRow(int $sourceId, ChunkStrategy $strategy, array $config, array $row): array
+    {
+        $input = new ChunkInput(
+            (string) $row['title'],
+            (string) $row['content'],
+            null === $row['content_raw'] ? null : (string) $row['content_raw'],
+            null === $row['content_raw_format'] ? null : (string) $row['content_raw_format'],
+        );
+        $chunks = $input->isEmpty() ? [] : self::enforceMaximum($strategy->split($input, $config), $config);
+
+        return ['chunks' => count($chunks)] + $this->chunks->syncDocument($sourceId, (int) $row['id'], $chunks);
+    }
+
+    /**
+     * Die Dokumente eines Datensatzes.
+     *
+     * @return list<array<string, mixed>>
+     */
+    protected function readItemDocuments(int $sourceId, string $itemId): array
+    {
+        return rex_sql::factory()->getArray(
+            'SELECT id, title, content, content_raw, content_raw_format FROM ' . IndexRepository::table()
+            . ' WHERE source_id = :s AND item_id = :i ORDER BY id',
+            ['s' => $sourceId, 'i' => $itemId],
+        );
     }
 
     /**
