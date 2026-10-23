@@ -3,6 +3,7 @@
 use FriendsOfRedaxo\Search\Analysis\Analyzer;
 use FriendsOfRedaxo\Search\Cronjob\EmbedCronjob;
 use FriendsOfRedaxo\Search\Cronjob\ReindexCronjob;
+use FriendsOfRedaxo\Search\Index\ArticleReindexer;
 
 $addon = rex_addon::get('search');
 
@@ -27,8 +28,13 @@ if (rex::isBackend() && 'search' === rex_be_controller::getCurrentPagePart(1)) {
     }
 }
 
-// Der Index wird bewusst nicht durch Extension Points fortgeschrieben. Ein Neuaufbau
-// laeuft ueber die Quellenliste, den Konsolenbefehl search:index oder diesen Cronjob.
+// Ein Neuaufbau laeuft ueber die Quellenliste, den Konsolenbefehl search:index oder diesen
+// Cronjob. Artikelquellen mit "Bei Aenderungen sofort aktualisieren" schreibt zusaetzlich der
+// ArticleReindexer fort; angemeldet wird immer, gefragt wird erst, wenn sich etwas aendert.
+if (rex_addon::get('structure')->isAvailable()) {
+    ArticleReindexer::register();
+}
+
 if (rex_addon::get('cronjob')->isAvailable()) {
     rex_cronjob_manager::registerType(ReindexCronjob::class);
     rex_cronjob_manager::registerType(EmbedCronjob::class);

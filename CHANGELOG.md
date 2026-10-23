@@ -1,5 +1,10 @@
 # Changelog
 
+## Unveröffentlicht
+
+- Artikelquellen haben die Option **Bei Änderungen sofort aktualisieren**, ab Werk aus. Ist sie an, werden Artikel nach Änderungen in der Struktur, an Metadaten und an Blöcken neu indiziert, Kategorien mit allen Artikeln darunter. Gesammelt wird während des Requests, indiziert einmal am Ende – bei Backend-Seiten erst, wenn die Seite beim Browser ist. Inhalte aus anderen Tabellen und die Wortliste bleiben beim Cronjob.
+- `Indexer::reindexItem()` baut jetzt auch die Abschnitte des Datensatzes neu. Bisher blieben sie bis zum nächsten vollständigen Lauf auf dem alten Text, und die Suche nach Bedeutung führte auf ein Dokument, das es so nicht mehr gab. Neu ist dafür `ChunkBuilder::rebuildItem()`.
+
 ## 0.2.1 – 2026-10-18
 
 Behebt die Installation über Composer auf PHP 8.1 und 8.2.

@@ -85,8 +85,18 @@ final class rex_search_word_form_repository_spy extends WordFormRepository
 /** Doppel: fasst Abschnitte und Vektoren nicht an. */
 final class rex_search_chunk_builder_spy extends ChunkBuilder
 {
+    /** @var list<string> */
+    public array $rebuiltItems = [];
+
     public function rebuildSource(Source $source): array
     {
+        return ['chunks' => 0, 'kept' => 0, 'written' => 0, 'deleted' => 0];
+    }
+
+    public function rebuildItem(Source $source, string $itemId): array
+    {
+        $this->rebuiltItems[] = $itemId;
+
         return ['chunks' => 0, 'kept' => 0, 'written' => 0, 'deleted' => 0];
     }
 }
@@ -249,6 +259,30 @@ final class rex_search_index_filter_test extends TestCase
         self::assertSame(0, $indexer->reindexItem($this->source(['nur_gerade' => []]), '3'));
         self::assertSame(['3'], $index->deletedItems);
         self::assertSame([], $index->stored);
+    }
+
+    /**
+     * Ohne die Abschnitte fuehrte die Suche nach Bedeutung weiter auf den alten Text, oder
+     * auf ein Dokument, das es nicht mehr gibt -- in beiden Faellen, ob der Datensatz
+     * geschrieben oder abgelehnt wurde.
+     */
+    public function testReindexItemAlsoRebuildsTheChunksOfTheItem(): void
+    {
+        $this->register($this->filter('nur_gerade', static fn (string $id): bool => 0 === (int) $id % 2));
+
+        $chunks = new rex_search_chunk_builder_spy();
+        $indexer = new Indexer(
+            new rex_search_index_repository_spy(),
+            new rex_search_source_repository_spy(),
+            new rex_search_word_repository_spy(),
+            new rex_search_word_form_repository_spy(),
+            $chunks,
+        );
+
+        $indexer->reindexItem($this->source(['nur_gerade' => []]), '4');
+        $indexer->reindexItem($this->source(['nur_gerade' => []]), '3');
+
+        self::assertSame(['4', '3'], $chunks->rebuiltItems);
     }
 
     /**

@@ -71,8 +71,10 @@ Tags verloren ginge.
 
 ## Index aufbauen
 
-Der Index wird **nicht** laufend fortgeschrieben. Änderungen an Artikeln oder YForm-Datensätzen
-lösen keinen Neuaufbau aus; das hielte bei großen Beständen den Request auf. Stattdessen:
+Der Index wird von sich aus **nicht** laufend fortgeschrieben. Änderungen an Artikeln oder
+YForm-Datensätzen lösen keinen Neuaufbau aus; das hielte bei großen Beständen den Request auf.
+Ausnahme auf Wunsch: Artikelquellen, siehe [unten](#artikel-bei-änderungen-aktualisieren).
+Sonst:
 
 - Backend: *Suche → Quellen*, Aktion *Neu indizieren* – **je Quelle**. Einen Knopf für alle
   Quellen gibt es bewusst nicht: er lief in einer Browseranfrage und damit in deren Zeitlimit,
@@ -87,6 +89,38 @@ So verschwinden gelöschte Datensätze ohne eigene Buchführung. Unveränderte D
 gleichem Inhalts-Hash werden nicht neu geschrieben.
 
 Wird die Konfiguration einer Quelle geändert, wird ihr Index gelöscht und sofort neu aufgebaut.
+
+### Artikel bei Änderungen aktualisieren
+
+Artikelquellen haben die Option **Bei Änderungen sofort aktualisieren**, ab Werk aus. Ist sie an,
+schreibt das AddOn die Quelle fort, sobald jemand in der Struktur etwas ändert:
+
+- Artikel anlegen, bearbeiten, kopieren, verschieben, löschen, online oder offline schalten,
+  zum Startartikel machen, in eine Kategorie umwandeln und zurück; Metadaten speichern
+- Blöcke anlegen, ändern, verschieben, löschen (`ART_CONTENT_UPDATED`)
+- Kategorien anlegen, bearbeiten, verschieben, löschen, online oder offline schalten – dann
+  mit allen Artikeln darunter, denn Status und Pfad einer Kategorie stecken in jedem davon
+
+Die Extension Points merken nur vor, welche Artikel betroffen sind. Indiziert wird einmal am
+Ende des Requests, nach `RESPONSE_SHUTDOWN` also erst, wenn die Seite beim Browser ist; wer
+speichert, wartet nicht auf das Rendern. Wo es den Punkt nicht gibt – JSON-Antworten, Konsole –,
+übernimmt eine Shutdown-Funktion. Zehn gespeicherte Blöcke ergeben so eine Aktualisierung, nicht
+zehn. Ein Fehler wird ins Systemprotokoll geschrieben und hält weder die anderen Quellen noch
+die Antwort auf.
+
+Aktualisiert werden mit dem Dokument auch seine **Abschnitte**. Ein Abschnitt, dessen Text sich
+nicht geändert hat, behält seinen Vektor; ein neuer bekommt erst beim nächsten Lauf von
+*Vektoren erzeugen* einen. Bis dahin findet ihn der Volltext, die Suche nach Bedeutung nicht.
+
+Zwei Dinge bleiben beim Cronjob:
+
+- **Inhalte aus anderen Tabellen.** Gibt ein Artikel etwa eine Terminliste aus YForm aus, hat
+  sich bei einem neuen Termin ein Datensatz geändert, kein Artikel. Das sieht kein Extension
+  Point der Struktur.
+- **Die Wortliste.** Ein einzelner Datensatz verrät nicht, ob ein Wort aus der ganzen Quelle
+  verschwunden ist (siehe [Die Wortliste bauen](#die-wortliste-bauen)).
+
+Einen Cronjob braucht es also weiterhin, nur seltener – nachts statt stündlich.
 
 ## Filter: was in den Index kommt
 
@@ -396,8 +430,8 @@ dem Index und braucht dafür gemessen rund 2,5 Sekunden. Gedacht für den Fall n
 Update – Index voll, Wortliste leer –, wo ein vollständiger Neuaufbau jedes PDF neu
 extrahieren und jeden Artikel neu rendern müsste.
 
-`Indexer::reindexItem()` – der Einzelaufruf für fremden Code – rührt die Wortliste **nicht**
-an: ein einzelner Datensatz verrät nicht, ob ein Wort aus der ganzen Quelle verschwunden
+`Indexer::reindexItem()` – der Einzelaufruf hinter *Bei Änderungen sofort aktualisieren*, auch
+für fremden Code – rührt die Wortliste **nicht** an: ein einzelner Datensatz verrät nicht, ob ein Wort aus der ganzen Quelle verschwunden
 ist. Schaden kann das nicht, denn ein veraltetes Wort wird nie angezeigt: eine Erweiterung
 zählt nur, wenn sie mehr Treffer bringt, und eine Korrektur nur, wenn sie überhaupt welche
 bringt. Der nächste vollständige Lauf räumt auf.
@@ -760,8 +794,9 @@ Volltextsuche, und genau deshalb ist *Volltext und Bedeutung* die gemischte Such
 **Es gibt keine Abfragesprache.** Kein UND, kein ODER, keine Klammern, keine Phrasen. Für
 Websites dieser Größenordnung ist das Ballast, den ohnehin niemand tippt.
 
-**Der Index wird nicht laufend fortgeschrieben.** Ein Neuaufbau läuft je Quelle über die
-Quellenliste, für alle über den Konsolenbefehl oder den Cronjob.
+**Der Index wird nur für Artikel laufend fortgeschrieben**, und nur, wenn die Quelle es will.
+Medien und YForm-Datensätze baut die Quellenliste je Quelle neu auf, für alle der
+Konsolenbefehl oder der Cronjob.
 
 ## Auf der Konsole
 
