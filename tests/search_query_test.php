@@ -181,6 +181,23 @@ final class rex_search_search_query_test extends TestCase
         self::assertSame(1, SearchQuery::create('b')->withSemanticLimit(0)->getSemanticLimit());
     }
 
+    public function testExpansionStartsBelowTheLimitUnlessToldOtherwise(): void
+    {
+        $query = SearchQuery::create('burg')->withLimit(100);
+
+        self::assertSame(100, $query->getExpandBelow());
+        self::assertSame(20, $query->withExpansion(true, 20)->getExpandBelow());
+        self::assertSame(1, $query->withExpansion(true, -5)->getExpandBelow());
+    }
+
+    public function testTheExpansionThresholdSurvivesANewTermAndASwitchOff(): void
+    {
+        $query = SearchQuery::create('burg')->withExpansion(true, 20)->withExpansion(false)->withTerm('ruine');
+
+        self::assertFalse($query->isExpanding());
+        self::assertSame(20, $query->withExpansion()->getExpandBelow());
+    }
+
     public function testTheSemanticSettingsSurviveANewTerm(): void
     {
         $query = SearchQuery::create('burg')->withSemantic(true, 0.3)->withSemanticWeight(0.5)->withTerm('ruine');

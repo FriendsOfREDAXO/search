@@ -1,5 +1,12 @@
 # Changelog
 
+## Unveröffentlicht
+
+- Die Tippfehlerkorrektur kommt vor der Erweiterung. Bisher fand die Erweiterung zu einem vertippten Wort meist seine Teile, und zur Korrektur kam es nie: „Energiberatung" lieferte 239 Treffer zu „Energie" und „Beratung" statt 34 zu „Energieberatung". Findet die Korrektur etwas, wird nicht mehr erweitert.
+- Wörter bis fünf Zeichen werden nicht mehr korrigiert, bisher lag die Grenze bei vier. Bei fünf Zeichen ist schon ein Schritt meist ein anderes Wort: „Ruine" wurde zu „reine".
+- Wörter mit Ziffern werden nie korrigiert. Aus einer Postleitzahl ohne Treffer wurde sonst eine benachbarte mit Treffern.
+- `withExpansion(true, $unter)` legt fest, unter wie vielen Treffern erweitert wird. Vorgabe bleibt das Limit.
+
 ## 0.2.1 – 2026-10-18
 
 Behebt die Installation über Composer auf PHP 8.1 und 8.2.

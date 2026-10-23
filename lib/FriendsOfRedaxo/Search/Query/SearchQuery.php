@@ -102,6 +102,8 @@ final class SearchQuery
 
     private bool $expanding = true;
 
+    private ?int $expandBelow = null;
+
     private bool $correcting = true;
 
     private bool $semantic = false;
@@ -194,6 +196,14 @@ final class SearchQuery
     public function isExpanding(): bool
     {
         return $this->expanding;
+    }
+
+    /**
+     * Unter so vielen Treffern wird erweitert; ohne Angabe ist das das Limit.
+     */
+    public function getExpandBelow(): int
+    {
+        return $this->expandBelow ?? $this->limit;
     }
 
     public function isCorrecting(): bool
@@ -369,11 +379,19 @@ final class SearchQuery
 
     /**
      * Verwandte Formen aus der Wortliste mitsuchen, etwa "Burgruine" zu "Ruine".
+     *
+     * Erweitert wird nur, wenn die Suche wie eingegeben weniger als `$below` Treffer hat.
+     * Vorgabe ist das Limit, also: die erste Seite wurde nicht voll. Wer viele Treffer
+     * auf einer Seite zeigt, will die Grenze tiefer -- bei hundert je Seite sind dreissig
+     * direkte Treffer genug, und die Erweiterung mischte ihnen nur Verwandtes bei.
      */
-    public function withExpansion(bool $expanding = true): self
+    public function withExpansion(bool $expanding = true, ?int $below = null): self
     {
         $clone = clone $this;
         $clone->expanding = $expanding;
+        if (null !== $below) {
+            $clone->expandBelow = max(1, $below);
+        }
 
         return $clone;
     }
@@ -529,6 +547,7 @@ final class SearchQuery
         $this->offset = $other->offset;
         $this->grouped = $other->grouped;
         $this->expanding = $other->expanding;
+        $this->expandBelow = $other->expandBelow;
         $this->correcting = $other->correcting;
         $this->semantic = $other->semantic;
         $this->semanticMinSimilarity = $other->semanticMinSimilarity;

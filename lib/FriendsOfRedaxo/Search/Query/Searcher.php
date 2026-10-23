@@ -63,10 +63,10 @@ final class Searcher
     }
 
     /**
-     * Sucht in bis zu drei Anlaeufen: wie eingegeben, erweitert, korrigiert.
+     * Sucht in bis zu drei Anlaeufen: wie eingegeben, korrigiert, erweitert.
      *
-     * Die Staffelung ist das Entscheidende, nicht die einzelnen Schritte. Erweitert wird
-     * erst, wenn die erste Seite nicht voll wurde, korrigiert erst, wenn gar nichts kam.
+     * Die Staffelung ist das Entscheidende, nicht die einzelnen Schritte. Korrigiert wird
+     * nur, wenn gar nichts kam, erweitert nur, wenn die erste Seite nicht voll wurde.
      * Am echten Bestand gemessen ist das der Unterschied zwischen einer brauchbaren und
      * einer unbrauchbaren Suche: "burg" findet 22 Artikel, und eine Erweiterung haengt
      * "Einbuergerung", "Hamburg" und "Schomburg" daran -- woraufhin sich ein Artikel ueber
@@ -88,7 +88,18 @@ final class Searcher
 
         $result = $this->run($query, $terms);
 
-        if ($query->isExpanding() && $result->total < $query->getLimit()) {
+        // Die Korrektur kommt vor der Erweiterung. Umgekehrt fand die Erweiterung zu einem
+        // vertippten Wort fast immer etwas, naemlich seine Teile -- "Energiberatung" brachte
+        // "Energie", "Beratung" und "Energiewende" --, und zur Korrektur auf
+        // "Energieberatung" kam es nie, weil ja nicht mehr nichts gefunden war.
+        if ($result->isEmpty() && $query->isCorrecting()) {
+            $corrected = $this->correct($query, $terms);
+            if (null !== $corrected) {
+                return $corrected;
+            }
+        }
+
+        if ($query->isExpanding() && $result->total < $query->getExpandBelow()) {
             $expanded = $this->expand($query, $terms);
             if ([] !== $expanded->expansions) {
                 $wider = $this->run($query, $expanded);
@@ -97,13 +108,19 @@ final class Searcher
             }
         }
 
-        if (!$result->isEmpty() || !$query->isCorrecting()) {
-            return $result;
-        }
+        return $result;
+    }
 
+    /**
+     * Der Anlauf mit korrigierter Schreibweise, oder null.
+     *
+     * Null auch dann, wenn die Korrektur nichts findet: die verschweigen wir lieber.
+     */
+    private function correct(SearchQuery $query, SearchTerms $terms): ?SearchResult
+    {
         $corrections = $this->corrections($query, $terms);
         if ([] === $corrections) {
-            return $result;
+            return null;
         }
 
         $corrected = $this->run($query, $terms->withWords(array_values(array_map(
@@ -111,8 +128,7 @@ final class Searcher
             $terms->words,
         ))), $corrections);
 
-        // Eine Korrektur, die auch nichts findet, verschweigen wir lieber.
-        return $corrected->isEmpty() ? $result : $corrected;
+        return $corrected->isEmpty() ? null : $corrected;
     }
 
     /**

@@ -370,18 +370,36 @@ Beides läuft **gestaffelt**, und das ist die wichtigste Regel:
 | Anlauf | Wann |
 |---|---|
 | wie eingegeben | immer |
+| korrigiert | wenn gar nichts kam; findet die Korrektur etwas, ist hier Schluss |
 | erweitert | wenn die erste Seite nicht voll wurde |
-| korrigiert | wenn gar nichts kam |
 
 Ohne diese Staffelung wird die Suche schlechter statt besser. Am echten Bestand gemessen:
 `burg` findet 22 Artikel; eine Erweiterung hängt „Einbürgerung", „Hamburg" und „Schomburg"
 daran, woraufhin ein Artikel über Ganerbenburgen vor den über die Burg Eppstein rutscht.
 Und `burg` mit Abstand 2 „korrigiert" zu `für`, `nur`, `zur` – bei vier Zeichen trifft
-Abstand 2 fast alles. Deshalb hängt der erlaubte Abstand an der Wortlänge: bis 4 Zeichen
-gar keine Korrektur, bis 7 Abstand 1, darüber 2.
+Abstand 2 fast alles. Deshalb hängt der erlaubte Abstand an der Wortlänge: bis 5 Zeichen
+gar keine Korrektur, bis 7 Abstand 1, darüber 2. Auch bei fünf Zeichen ist ein Schritt meist
+schon ein anderes Wort, das es gibt: „Ruine" wurde zu „reine", „pegel" zu „Regel". **Wörter mit
+einer Ziffer werden nie korrigiert**, aus einer Postleitzahl ohne Treffer wurde sonst die
+nächstgelegene mit Treffern.
+
+Die Korrektur kommt **vor** der Erweiterung. Umgekehrt fand die Erweiterung zu einem vertippten
+Wort fast immer etwas, nämlich seine Teile: „Energiberatung" brachte 239 Treffer zu „Energie",
+„Beratung" und „Energiewende", und zur Korrektur kam es nie, weil ja nicht mehr nichts gefunden
+war. Jetzt sind es 34 Treffer zu „Energieberatung". An einem Bestand von 800 Dokumenten und 39
+Suchbegriffen änderten sich durch die neue Reihenfolge und die beiden Regeln drei Ergebnisse,
+diese drei.
 
 Was passiert ist, steht im Ergebnis: `$result->getExpansions()` und
 `$result->corrections`. Abschalten über `withExpansion(false)` und `withCorrection(false)`.
+
+Wann erweitert wird, lässt sich verschieben. Vorgabe ist das Limit, also „die erste Seite
+wurde nicht voll". Wer hundert Treffer auf einer Seite zeigt, will die Grenze tiefer, sonst
+mischt die Erweiterung dreißig direkten Treffern Verwandtes bei:
+
+```php
+SearchQuery::create($begriff)->withLimit(100)->withExpansion(true, 20);
+```
 
 ### Die Wortliste bauen
 
