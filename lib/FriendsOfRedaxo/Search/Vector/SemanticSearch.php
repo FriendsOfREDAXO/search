@@ -152,11 +152,17 @@ class SemanticSearch
         // Mehr Abschnitte holen als Dokumente gewuenscht sind: mehrere Abschnitte
         // desselben Dokuments fallen beim Zusammenfassen zu einem zusammen, und bei
         // einem PDF mit siebenhundert Abschnitten sind das schnell alle.
+        //
+        // Der Suchvektor kommt als abgeleitete Tabelle vorneweg. Stand VEC_FromText(:q)
+        // im Abstand, las MariaDB 12.3 den Text neben den Joins fuer jede Zeile neu ein:
+        // bei 2090 Abschnitten mit 4096 Dimensionen 470 ms je Abfrage statt 18 ms, bei
+        // gleichen Zeilen in gleicher Reihenfolge.
         return rex_sql::factory()->getArray(
             'SELECT c.id AS chunk_id, c.document_id, c.content, c.heading_path, c.chunk_no, c.chunk_total,'
             . ' i.namespace, i.item_id, i.type, i.source_id, i.clang_id, i.language,'
-            . ' VEC_DISTANCE_COSINE(v.embedding, VEC_FromText(:q)) AS distance'
-            . ' FROM ' . VectorStore::table() . ' v'
+            . ' VEC_DISTANCE_COSINE(v.embedding, q.embedding) AS distance'
+            . ' FROM (SELECT VEC_FromText(:q) AS embedding) q'
+            . ' JOIN ' . VectorStore::table() . ' v'
             . ' JOIN ' . ChunkRepository::table() . ' c ON c.id = v.chunk_id'
             . ' JOIN ' . IndexRepository::table() . ' i ON i.id = c.document_id'
             . ([] === $where ? '' : ' WHERE ' . implode(' AND ', $where))

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unveröffentlicht
+
+- Die semantische Suche liest den Suchvektor nur noch einmal je Abfrage ein. Bisher wertete MariaDB `VEC_FromText()` für jeden Abschnitt neu aus; mit 2090 Abschnitten zu 4096 Dimensionen dauerte eine Abfrage auf MariaDB 12.3 so 470 ms statt 18 ms, auf einem Webserver fast zwei Sekunden. Die Treffer bleiben dieselben.
+
 ## 0.2.1 – 2026-10-18
 
 Behebt die Installation über Composer auf PHP 8.1 und 8.2.
