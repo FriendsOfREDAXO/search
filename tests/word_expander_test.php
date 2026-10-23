@@ -189,10 +189,24 @@ final class rex_search_word_expander_test extends TestCase
         self::assertSame(0, WordExpander::maxDistance('burg'));
     }
 
+    public function testFiveLettersAreNotCorrectedEither(): void
+    {
+        // Ein Schritt Abstand ist bei fuenf Zeichen meist ein anderes Wort.
+        self::assertNull($this->expander(['Regel' => 40, 'Segel' => 2])->correct('pegel'));
+    }
+
+    public function testNumbersAreNeverCorrected(): void
+    {
+        self::assertNull($this->expander(['12346' => 4])->correct('12345'));
+        self::assertNull($this->expander(['Baujahr2024' => 4])->correct('Baujahr2023'));
+        self::assertSame(0, WordExpander::maxDistance('A380'));
+    }
+
     public function testTheAllowedDistanceGrowsWithTheWordLength(): void
     {
         self::assertSame(0, WordExpander::maxDistance('abcd'));
-        self::assertSame(1, WordExpander::maxDistance('abcde'));
+        self::assertSame(0, WordExpander::maxDistance('abcde'));
+        self::assertSame(1, WordExpander::maxDistance('abcdef'));
         self::assertSame(1, WordExpander::maxDistance('abcdefg'));
         self::assertSame(2, WordExpander::maxDistance('abcdefgh'));
     }

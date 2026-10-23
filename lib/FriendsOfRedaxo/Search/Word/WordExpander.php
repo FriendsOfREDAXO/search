@@ -8,6 +8,7 @@ use FriendsOfRedaxo\Search\Analysis\Analyzer;
 
 use function count;
 use function in_array;
+use function preg_match;
 
 /**
  * Sucht zu einem eingegebenen Wort verwandte Formen in der Wortliste.
@@ -36,9 +37,11 @@ final class WordExpander
      *
      * Die Staffelung ist keine Vorsicht, sondern gemessen notwendig. Bei einem Wort aus vier
      * Zeichen trifft Abstand 2 fast alles: "burg" wurde damit zu "fuer", "nur", "zur",
-     * "blog", "kurz" korrigiert. Kurze Woerter werden deshalb gar nicht korrigiert.
+     * "blog", "kurz" korrigiert. Bei fuenf Zeichen ist schon ein Schritt meist ein anderes
+     * Wort, das es auch gibt: "pegel" wurde zu "Regel", "weber" zu "weder". Kurze Woerter
+     * werden deshalb gar nicht korrigiert.
      */
-    private const DISTANCE = [4 => 0, 7 => 1];
+    private const DISTANCE = [5 => 0, 7 => 1];
 
     private const DISTANCE_MAX = 2;
 
@@ -132,9 +135,17 @@ final class WordExpander
 
     /**
      * Der erlaubte Abstand fuer ein Wort dieser Laenge.
+     *
+     * Null fuer alles mit einer Ziffer: Zahlen sind keine Tippfehler. Aus einer
+     * Postleitzahl, zu der es nichts gab, wurde sonst die naechstgelegene, zu der es
+     * etwas gab, und aus "2023" die "2024".
      */
     public static function maxDistance(string $word): int
     {
+        if (1 === preg_match('/\d/u', $word)) {
+            return 0;
+        }
+
         $length = mb_strlen($word);
         foreach (self::DISTANCE as $bis => $abstand) {
             if ($length <= $bis) {
