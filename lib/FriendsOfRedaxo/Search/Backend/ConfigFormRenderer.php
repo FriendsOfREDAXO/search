@@ -89,6 +89,10 @@ final class ConfigFormRenderer
                 ]], false);
                 $element = ['field' => $checkbox->parse('core/form/checkbox.php'), 'error' => $error];
                 break;
+            case ConfigField::PASSWORD:
+                // Der Wert steht im Formular, sonst loeschte jedes Speichern das Passwort.
+                $element['field'] = '<input class="form-control" type="password" autocomplete="new-password" id="' . $fieldId . '" name="' . $inputName . '" value="' . rex_escape((string) $value) . '"' . $reload . '>';
+                break;
             default:
                 $element['field'] = '<input class="form-control" type="text" id="' . $fieldId . '" name="' . $inputName . '" value="' . rex_escape((string) $value) . '"' . $reload . '>';
         }

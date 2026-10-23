@@ -25,7 +25,7 @@ braucht, legt mehrere Quellen an; die Quellenliste zeigt Namespace, Typ und Must
 - **YForm-Tabelle** (`yform` / Tabellenname, `{id}-content`): Tabelle, Inhaltsfelder, Titelfeld
   und URL-Muster konfigurierbar; alle Datensätze der Tabelle werden indiziert. Reagiert auf `YFORM_DATA_ADDED`, `_UPDATED`, `_DELETED`.
 - **Artikel-Inhalt** (`article` / `fullcontent`, `{article_id}-{clang_id}-fullcontent`): Sprachen,
-  alle oder ausgewählte Kategorien samt Unterkategorien, Offline-Artikel und Inhaltsquelle (Slice-Werte oder gerenderter Artikel).
+  alle oder ausgewählte Kategorien samt Unterkategorien, Offline-Artikel und Inhaltsquelle (Slice-Werte, gerenderter Artikel oder Seite aus dem Frontend, siehe unten).
 - **Artikel-Metadaten** (`article` / `meta`, `{article_id}-{clang_id}-meta`): wie oben, dazu die
   Auswahl der Felder aus Artikelname und den aktuell definierten Metainfo-Feldern `art_*`.
 - **Medienpool-Dokumente** (`media` / `document`, `{media_id}-document`): alle oder ausgewählte
@@ -36,6 +36,48 @@ braucht, legt mehrere Quellen an; die Quellenliste zeigt Namespace, Typ und Must
 Beide Artikel-Typen teilen sich den Namespace `article`. Ein Artikel unter einer offline
 geschalteten Kategorie gilt als nicht erreichbar und fällt beim nächsten Aufbau aus dem Index. Ein Quellentyp kann `getNamespace()` überschreiben, um sich einen
 Namespace mit anderen Typen zu teilen; unterschieden wird dann über `getType()`.
+
+### Woher der Artikel-Inhalt kommt
+
+Die Inhaltsquelle des Typs *Artikel-Inhalt* hat drei Stufen:
+
+- **Slice-Werte**: die gespeicherten Werte der Slices, ohne Modul-Ausgabe. Schnell, aber was
+  ein Modul erst bei der Ausgabe zusammenstellt – Datensätze, Listen, Texte aus Sprog –, fehlt.
+- **Gerenderter Artikel**: `rex_article_content::getArticle()` im laufenden Prozess, also im
+  Backend oder auf der Konsole. Wirft ein Modul dabei einen Fehler, fällt der Artikel auf die
+  Slice-Werte zurück.
+- **Seite aus dem Frontend**: der Artikel wird per HTTP abgerufen, so wie ein Besucher ihn
+  bekommt. Das ist der Weg für Module, die nur im Frontend funktionieren – die
+  `rex::isFrontend()` abfragen, auf yrewrite-Domains bauen oder Daten erst im Template
+  bereitstellen.
+
+Beim Abruf aus dem Frontend hängt das AddOn `search_index=1` an die URL. Dann setzt das
+Frontend Markierungen um jede Ausgabe von `getArticle()` für den aufgerufenen Artikel, und nur
+was dazwischen steht, kommt in den Index. Navigation, Kopf und Fuß bleiben draußen, ebenso
+Inhalte anderer Artikel, die ein Template einbindet. Die Markierung nennt Artikel und Sprache:
+liefert das Frontend statt des Artikels eine andere Seite aus, etwa die Fehlerseite, wird sie
+nicht unter dem falschen Artikel abgelegt.
+
+Die Adresse kommt von yrewrite, ohne yrewrite aus der Server-URL in den Systemeinstellungen
+und `index.php?article_id=…&clang=…`.
+
+Was dabei schiefgehen kann:
+
+- Ein einzelner Artikel, der weiterleitet, fehlt, einen Fehler liefert oder keine Markierung
+  enthält, fällt auf die Slice-Werte zurück. Das betrifft auch Offline-Artikel, sofern die
+  Quelle sie einschließt: das Frontend zeigt sie Besuchern nicht.
+- Ist das Frontend gar nicht erreichbar oder verlangt eine Anmeldung (401, 403, 407), bricht
+  der Lauf mit einer Meldung ab, und der Index bleibt, wie er war. Sonst fiele jeder Artikel
+  stillschweigend auf die Slice-Werte zurück.
+- Ein Frontend hinter Basic Auth, etwa auf einem Testserver, braucht Benutzer und Passwort in
+  der Quelle. Beides wird unverschlüsselt in der Konfiguration der Quelle gespeichert.
+- Für eine Entwicklungsumgebung mit selbst signiertem Zertifikat lässt sich die Prüfung des
+  SSL-Zertifikats abschalten.
+
+Ein HTTP-Abruf je Artikel und Sprache dauert spürbar länger als das Rendern im Prozess. Wird
+die Konfiguration einer Quelle geändert, baut das Backend ihren Index sofort neu auf, und das
+läuft in der Browseranfrage und deren Zeitlimit. Bei vielen Artikeln den Index deshalb über
+`bin/console search:index --source=<id>` oder den Cronjob aufbauen.
 
 ## Inhalt und Originalinhalt
 

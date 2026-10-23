@@ -3,6 +3,7 @@
 use FriendsOfRedaxo\Search\Analysis\Analyzer;
 use FriendsOfRedaxo\Search\Cronjob\EmbedCronjob;
 use FriendsOfRedaxo\Search\Cronjob\ReindexCronjob;
+use FriendsOfRedaxo\Search\Source\Type\ArticleFrontend;
 
 $addon = rex_addon::get('search');
 
@@ -17,6 +18,9 @@ if (is_file(__DIR__ . '/vendor/autoload.php')) {
 // ab. Ohne diese Angabe schriebe sie dafuer nach vendor/ -- auf einem Server mit
 // schreibgeschuetztem vendor faellt sie damit aus, und zwar lautlos.
 Analyzer::setCacheDirectory(rex_path::addonData('search', 'dictionaries'));
+
+// Abruf durch den Modus "Seite aus dem Frontend": nur der Artikelinhalt wird markiert.
+ArticleFrontend::registerMarkers();
 
 if (rex::isBackend() && 'search' === rex_be_controller::getCurrentPagePart(1)) {
     // Cache-Buster ueber die Dateizeit, damit Aenderungen am Skript ohne Versionssprung ankommen.
