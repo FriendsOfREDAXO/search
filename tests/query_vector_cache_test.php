@@ -7,6 +7,28 @@ use PHPUnit\Framework\TestCase;
 final class rex_search_query_vector_cache_test extends TestCase
 {
     /**
+     * Die Obergrenze ist eine Vorgabe, keine feste Groesse: Ein Betrieb mit viel
+     * Verkehr und wiederkehrenden Fragen traegt mehr Eintraege.
+     */
+    public function testTheLimitCanBeRaised(): void
+    {
+        $before = rex_config::get('search', 'query_cache_entries');
+
+        try {
+            rex_config::set('search', 'query_cache_entries', 10000);
+            self::assertSame(10000, QueryVectorCache::maxEntries());
+
+            // Ein versehentlich leeres Feld darf nicht heissen "nichts behalten" --
+            // das Aufraeumen wuerde den Zwischenspeicher sonst bei jedem Schreiben
+            // vollstaendig leeren.
+            rex_config::set('search', 'query_cache_entries', 0);
+            self::assertSame(QueryVectorCache::MAX_ENTRIES, QueryVectorCache::maxEntries());
+        } finally {
+            rex_config::set('search', 'query_cache_entries', $before);
+        }
+    }
+
+    /**
      * Das Profil gehoert in den Schluessel. Nach einem Wechsel des Modells waere der
      * gemerkte Vektor derselben Frage sonst falsch -- und zwar auf eine Weise, die
      * niemandem auffiele: er haette die richtige Laenge und zeigte nur woandershin.

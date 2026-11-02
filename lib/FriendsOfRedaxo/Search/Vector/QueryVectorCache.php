@@ -6,6 +6,7 @@ namespace FriendsOfRedaxo\Search\Vector;
 
 use DateTimeImmutable;
 use rex;
+use rex_config;
 use rex_sql;
 use Throwable;
 
@@ -27,7 +28,15 @@ use Throwable;
  */
 class QueryVectorCache
 {
-    /** So viele Fragen werden behalten, danach fliegen die aeltesten heraus. */
+    /**
+     * So viele Fragen werden behalten, danach fliegen die aeltesten heraus.
+     *
+     * Vorgabe, keine feste Grenze: ueber rex_config('search', 'query_cache_entries')
+     * laesst sie sich anheben. Eine Website mit viel Verkehr und wiederkehrenden
+     * Fragen traegt mehr, und ab dem Moment, in dem auch die Passagensuche hier
+     * ablegt, kommen zu den Suchbegriffen ganze Fragen hinzu. Platz kostet es:
+     * ein Eintrag sind rund 27 KB, die Vorgabe also etwa 54 MB.
+     */
     public const MAX_ENTRIES = 2000;
 
     /** Nur ab und zu aufraeumen; bei jedem Schreiben waere es verschwendete Zeit. */
@@ -115,15 +124,30 @@ class QueryVectorCache
         );
     }
 
+    /**
+     * Die geltende Obergrenze.
+     *
+     * Ein Wert unter 1 schaltet das Aufraeumen nicht ab, sondern faellt auf die
+     * Vorgabe zurueck: Ein versehentlich leer gespeichertes Feld wuerde den
+     * Zwischenspeicher sonst bei jedem Schreiben vollstaendig leeren.
+     */
+    public static function maxEntries(): int
+    {
+        $configured = (int) rex_config::get('search', 'query_cache_entries', self::MAX_ENTRIES);
+
+        return $configured > 0 ? $configured : self::MAX_ENTRIES;
+    }
+
     private function prune(): void
     {
+        $max = self::maxEntries();
         $count = $this->countAll();
-        if ($count <= self::MAX_ENTRIES) {
+        if ($count <= $max) {
             return;
         }
 
         rex_sql::factory()->setQuery(
-            'DELETE FROM ' . self::table() . ' ORDER BY used_at ASC LIMIT ' . ($count - self::MAX_ENTRIES),
+            'DELETE FROM ' . self::table() . ' ORDER BY used_at ASC LIMIT ' . ($count - $max),
         );
     }
 }

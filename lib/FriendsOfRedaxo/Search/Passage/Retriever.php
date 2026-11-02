@@ -8,6 +8,7 @@ use FriendsOfRedaxo\Search\Chunk\ChunkRepository;
 use FriendsOfRedaxo\Search\Index\IndexRepository;
 use FriendsOfRedaxo\Search\Vector\EmbeddingClient;
 use FriendsOfRedaxo\Search\Vector\EmbeddingException;
+use FriendsOfRedaxo\Search\Vector\QueryVectorCache;
 use FriendsOfRedaxo\Search\Vector\VectorStore;
 use FriendsOfRedaxo\Search\Vector\VectorSupport;
 use rex_extension;
@@ -34,8 +35,13 @@ use function is_string;
  *
  * Doppelte Abschnitte. Erfassen zwei Quellen dieselbe Datei, steht derselbe Text zweimal
  * im Index -- und saehe im Kontext aus wie eine Bestaetigung durch eine zweite Quelle.
+ *
+ * Nicht final, wie {@see \FriendsOfRedaxo\Search\Vector\SemanticSearch} und
+ * {@see EmbeddingClient}: Ohne diese Naht liesse sich das Zwischenspeichern der
+ * Fragevektoren nur dort pruefen, wo ai_platform eingerichtet ist und ein Testlauf
+ * Geld kostet.
  */
-final class Retriever
+class Retriever
 {
     /**
      * So viel mehr wird geholt, als am Ende gebraucht wird.
@@ -50,10 +56,13 @@ final class Retriever
 
     private readonly VectorStore $store;
 
-    public function __construct(?EmbeddingClient $client = null, ?VectorStore $store = null)
+    private readonly QueryVectorCache $cache;
+
+    public function __construct(?EmbeddingClient $client = null, ?VectorStore $store = null, ?QueryVectorCache $cache = null)
     {
         $this->client = $client ?? new EmbeddingClient();
         $this->store = $store ?? new VectorStore();
+        $this->cache = $cache ?? new QueryVectorCache();
     }
 
     /**
@@ -67,16 +76,8 @@ final class Retriever
             return PassageResult::empty($query);
         }
 
-        try {
-            $vector = $this->client->embed([$query->getQuestion()])[0] ?? [];
-        } catch (EmbeddingException) {
-            // Der Dienst antwortet nicht. Keine Passagen ist hier die richtige Antwort:
-            // ein Aufrufer, der daraufhin ohne Kontext antwortet, ist besser dran als
-            // einer, der auf eine Ausnahme laeuft.
-            return PassageResult::empty($query);
-        }
-
-        if ([] === $vector) {
+        $vector = $this->vectorFor($query->getQuestion());
+        if (null === $vector) {
             return PassageResult::empty($query);
         }
 
@@ -103,6 +104,62 @@ final class Retriever
     }
 
     /**
+     * Der Vektor zu einer Frage, aus dem Zwischenspeicher oder frisch.
+     *
+     * Dieselbe Reihenfolge wie in {@see \FriendsOfRedaxo\Search\Vector\SemanticSearch::vectorFor()},
+     * und aus demselben Grund: Das Einbetten geht ueber das Netz und dauert ein
+     * Vielfaches der Nachbarsuche selbst. Bis hierher zahlte die Passagensuche diesen
+     * Weg bei jeder Frage neu, auch bei einer, die eine Minute vorher schon gestellt
+     * wurde -- der Zwischenspeicher lag auf dem anderen Pfad.
+     *
+     * Zurueck kommt die Textform, nicht die Liste: Das ist, was der Zwischenspeicher
+     * haelt und was {@see self::findNearest()} an VEC_FromText weiterreicht. Eine
+     * Umrechnung gibt es damit in keiner Richtung.
+     */
+    protected function vectorFor(string $question): ?string
+    {
+        $profileId = $this->profileId();
+        if (null === $profileId) {
+            return null;
+        }
+
+        $cached = $this->cache->get($question, $profileId);
+        if (null !== $cached) {
+            return $cached;
+        }
+
+        try {
+            $vector = $this->client->embed([$question])[0] ?? [];
+        } catch (EmbeddingException) {
+            // Der Dienst antwortet nicht. Keine Passagen ist hier die richtige Antwort:
+            // ein Aufrufer, der daraufhin ohne Kontext antwortet, ist besser dran als
+            // einer, der auf eine Ausnahme laeuft.
+            return null;
+        }
+
+        if ([] === $vector) {
+            return null;
+        }
+
+        $text = VectorStore::toText($vector);
+        $this->cache->put($question, $profileId, $text);
+
+        return $text;
+    }
+
+    /**
+     * Das eingestellte Embedding-Profil.
+     *
+     * Eigene Methode aus demselben Grund wie in SemanticSearch: Die Auskunft kommt aus
+     * einem anderen AddOn, und ohne diese Naht liesse sich {@see self::vectorFor()} nur
+     * dort pruefen, wo ai_platform eingerichtet ist.
+     */
+    protected function profileId(): ?int
+    {
+        return EmbeddingClient::getProfileId();
+    }
+
+    /**
      * Ob ueberhaupt gesucht werden kann: Datenbank, Profil, Vektoren.
      */
     public function isReady(): bool
@@ -111,13 +168,13 @@ final class Retriever
     }
 
     /**
-     * @param list<float> $vector
+     * @param string $vector Textform, wie sie VEC_FromText erwartet
      * @return list<array<string, mixed>>
      */
-    private function findNearest(PassageQuery $query, array $vector): array
+    protected function findNearest(PassageQuery $query, string $vector): array
     {
         $where = [];
-        $params = ['q' => VectorStore::toText($vector)];
+        $params = ['q' => $vector];
 
         foreach ($query->getFilters() as $column => $values) {
             $names = [];
